@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>告警历史 · 股池监控台（设计稿）</title>
+<link rel="stylesheet" href="../assets/design.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">股</div>
+      <div><div class="brand-name">股池监控台</div><div class="brand-sub">Stock Monitor</div></div>
+    </div>
+    <div>
+      <div class="nav-group-label">交易</div>
+      <nav class="nav">
+        <a class="nav-item" href="orders.html"><svg width="16" height="16"><use href="#i-list"/></svg><span>订单列表</span></a>
+        <a class="nav-item" href="order-form.html"><svg width="16" height="16"><use href="#i-plus"/></svg><span>添加订单</span></a>
+        <a class="nav-item" href="alarm-settings.html"><svg width="16" height="16"><use href="#i-bell"/></svg><span>告警设置</span></a>
+        <a class="nav-item active" href="alarm-history.html"><svg width="16" height="16"><use href="#i-history"/></svg><span>告警历史</span></a>
+      </nav>
+    </div>
+    <div>
+      <div class="nav-group-label">监控</div>
+      <nav class="nav">
+        <a class="nav-item" href="indicators.html"><svg width="16" height="16"><use href="#i-gauge"/></svg><span>指标监控</span><span class="nav-badge">2</span></a>
+        <a class="nav-item" href="ai.html"><svg width="16" height="16"><use href="#i-sparkles"/></svg><span>AI 分析</span></a>
+      </nav>
+    </div>
+    <div>
+      <div class="nav-group-label">系统</div>
+      <nav class="nav">
+        <a class="nav-item" href="account.html"><svg width="16" height="16"><use href="#i-cog"/></svg><span>账户设置</span></a>
+        <a class="nav-item" href="auth.html"><svg width="16" height="16"><use href="#i-user"/></svg><span>退出登录</span></a>
+      </nav>
+    </div>
+    <div class="side-foot">
+      <div class="side-foot-row"><span>监控</span><b class="down">运行中</b></div>
+      <div class="side-foot-row"><span>交易时段</span><b>午间休市</b></div>
+      <div class="side-foot-row"><span>告警冷却</span><b>4 小时</b></div>
+      <div class="side-foot-row"><span>雪球</span><b class="down">正常</b></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">订单管理 / <b>告警历史</b></div>
+      <div class="spacer"></div>
+      <span class="pill live"><i class="dot"></i> 监控运行中</span>
+      <button class="icon-btn" id="theme-btn" title="切换深色 / 浅色"><svg width="16" height="16"><use href="#i-moon" id="theme-icon"/></svg></button>
+      <div class="avatar">LE</div>
+    </header>
+
+    <div class="content">
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">告警历史</h1>
+            <p class="page-desc">按时间倒序展示全部触发记录，含邮件送达状态</p>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-ghost"><svg width="15" height="15"><use href="#i-mail"/></svg> 测试邮件</button>
+            <button class="btn btn-ghost"><svg width="15" height="15"><use href="#i-trash"/></svg> 清理 30 天前</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="kpi">
+            <div class="kpi-label">今日触发</div>
+            <div class="kpi-value num">7</div>
+            <div class="kpi-foot">昨日 3 条</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">近 7 天</div>
+            <div class="kpi-value num">28</div>
+            <div class="kpi-foot"><span class="tag tag-up">价格 18</span> 估值 7 · 指标 3</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">邮件送达</div>
+            <div class="kpi-value num down">26</div>
+            <div class="kpi-foot">失败 2 条</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">冷却拦截</div>
+            <div class="kpi-value num">41</div>
+            <div class="kpi-foot">未重复打扰</div>
+          </div>
+        </div>
+
+        <div class="card toolbar" style="margin-bottom:0;border-radius:var(--radius) var(--radius) 0 0">
+          <div class="search" style="flex:0 1 260px">
+            <svg width="14" height="14"><use href="#i-search"/></svg>
+            <input placeholder="搜索标的或告警内容">
+          </div>
+          <div class="chips">
+            <button class="chip on">全部</button>
+            <button class="chip">价格</button>
+            <button class="chip">PE</button>
+            <button class="chip">PB</button>
+            <button class="chip">指标</button>
+            <button class="chip">邮件失败</button>
+          </div>
+          <div style="margin-left:auto">
+            <select class="select"><option>近 7 天</option><option>近 30 天</option><option>全部</option></select>
+          </div>
+        </div>
+
+        <div class="card" style="border-radius:0 0 var(--radius) var(--radius);margin-top:-1px">
+          <div class="timeline">
+            <div class="tl-day">2026-10-21 · 今天</div>
+
+            <div class="tl-item is-up">
+              <div class="tl-dot"><svg width="14" height="14"><use href="#i-arrow-up"/></svg></div>
+              <div>
+                <div class="tl-title">贵州茅台 触发止盈告警</div>
+                <div class="tl-meta">现价 <b class="num">1,682.50</b> ≥ 目标卖出价 <b class="num">1,900.00</b>　·　阈值档位：卖出价</div>
+              </div>
+              <div class="tl-right">
+                <span class="tag tag-up">价格</span>
+                <span>14:32</span>
+                <span class="down"><svg width="12" height="12" style="vertical-align:-1px"><use href="#i-mail"/></svg> 已送达</span>
+              </div>
+            </div>
+
+            <div class="tl-item is-warn">
+              <div class="tl-dot"><svg width="14" height="14"><use href="#i-gauge"/></svg></div>
+              <div>
+                <div class="tl-title">隆基绿能 52 周回撤 41.2%</div>
+                <div class="tl-meta">现价 <b class="num">15.44</b>，52 周高 <b class="num">26.26</b>　·　超过阈值 35%</div>
+              </div>
+              <div class="tl-right">
+                <span class="tag tag-accent">指标·长期</span>
+                <span>13:10</span>
+                <span class="down"><svg width="12" height="12" style="vertical-align:-1px"><use href="#i-mail"/></svg> 已送达</span>
+              </div>
+            </div>
+
+            <div class="tl-item is-down">
+              <div class="tl-dot"><svg width="14" height="14"><use href="#i-trend-down"/></svg></div>
+              <div>
+                <div class="tl-title">招商银行 触及第一档建仓价</div>
+                <div class="tl-meta">现价 <b class="num">38.72</b> ≤ 第一档 <b class="num">39.00</b>　·　距下一档 -8.4%</div>
+              </div>
+              <div class="tl-right">
+                <span class="tag tag-up">价格</span>
+                <span>11:05</span>
+                <span class="up"><svg width="12" height="12" style="vertical-align:-1px"><use href="#i-alert"/></svg> 发送失败</span>
+              </div>
+            </div>
+
+            <div class="tl-item">
+              <div class="tl-dot"><svg width="14" height="14"><use href="#i-bell"/></svg></div>
+              <div>
+                <div class="tl-title">比亚迪 PE 进入第一档</div>
+                <div class="tl-meta">PE <b class="num">22.40</b> ≤ 第一档 <b class="num">25.00</b></div>
+              </div>
+              <div class="tl-right">
+                <span class="tag tag-down">PE</span>
+                <span>10:22</span>
+                <span class="down"><svg width="12" height="12" style="vertical-align:-1px"><use href="#i-mail"/></svg> 已送达</span>
+              </div>
+            </div>
+
+            <div class="tl-day">2026-10-20 · 昨天</div>
+
+            <div class="tl-item is-warn">
+              <div class="tl-dot"><svg width="14" height="14"><use href="#i-gauge"/></svg></div>
+              <div>
+                <div class="tl-title">宁德时代 20 日跑输沪深300 达 16.8%</div>
+                <div class="tl-meta">个股 20 日 <b class="num down">-19.4%</b>　·　基准 <b class="num down">-2.6%</b>　·　超过阈值 15%</div>
+              </div>
+              <div class="tl-right">
+                <span class="tag tag-accent">指标·短期</span>
+                <span>15:00</span>
+                <span class="down"><svg width="12" height="12" style="vertical-align:-1px"><use href="#i-mail"/></svg> 已送达</span>
+              </div>
+            </div>
+
+            <div class="tl-item">
+              <div class="tl-dot"><svg width="14" height="14"><use href="#i-bell"/></svg></div>
+              <div>
+                <div class="tl-title">中国平安 PB 进入第二档</div>
+                <div class="tl-meta">PB <b class="num">1.02</b> ≤ 第二档 <b class="num">1.10</b></div>
+              </div>
+              <div class="tl-right">
+                <span class="tag tag-down">PB</span>
+                <span>14:07</span>
+                <span class="muted">冷却中·未发送</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card pager" style="box-shadow:none;border:none;border-top:1px solid var(--border-soft);border-radius:0 0 var(--radius) var(--radius);margin:0">
+            <div class="pager-info">共 <b class="num">128</b> 条记录</div>
+            <div class="pager-nav">
+              <button class="pg">«</button><button class="pg on">1</button><button class="pg">2</button><button class="pg">3</button><button class="pg">»</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/app.js"></script>
+</body>
+</html>

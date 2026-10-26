@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}告警设置 - 股池监控台{% endblock %}
+{% block crumb %}告警设置{% endblock %}
+
+{# DECIMAL 列出来是 '5.0000' 这种定长小数，表单里要显示成 '5' #}
+{% macro numval(v) -%}{{ "%.6g"|format(v|float) }}{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="page-title">告警设置</h1>
+        <p class="page-desc">左侧选择标的，右侧按类型调整阈值 · 保存后下一轮询周期生效</p>
+    </div>
+</div>
+
+{% if not stocks_with_settings %}
+<div class="card">
+    <div class="empty-row" style="padding:48px 0">暂无监控标的，请先添加订单</div>
+</div>
+{% else %}
+<div class="alarm-layout">
+    <!-- 左：标的列表 -->
+    <div class="card">
+        <div style="padding:14px 16px 6px">
+            <div class="rail-title" style="margin-bottom:8px">监控标的</div>
+        </div>
+        <div class="stock-list">
+            {% for item in stocks_with_settings %}
+            {% set stock = item.stock %}
+            {% set warehouse = item.warehouse %}
+            <div class="stock-item {{ 'on' if loop.first }}" data-stock-item="{{ stock.id }}">
+                <span class="cell-avatar">{{ (stock.stock_name or '?')[:1] }}</span>
+                <span class="cell-primary">
+                    <span>
+                        <div class="cell-name">{{ stock.stock_name }}</div>
+                        <div class="cell-code num">{{ stock.stock_code }}</div>
+                    </span>
+                </span>
+                {% if stock.is_alarm_active == 1 %}
+                <svg class="bell-hot" width="15" height="15"><use href="#i-bell"/></svg>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- 右：阈值面板（每标的一个，JS 切换） -->
+    {% for item in stocks_with_settings %}
+    {% set stock = item.stock %}
+    {% set warehouse = item.warehouse %}
+    {% set pe_record = item.pe_record %}
+    {% set pb_record = item.pb_record %}
+    {% set indicator_config = item.indicator_config %}
+    {# tab 默认 = 价格；保存完指标阈值会带 ?tab=indicator 回到本页签 #}
+    {% set active_tab = request.args.get('tab', 'price') %}
+    <div class="card {{ 'hidden' if not loop.first }}" data-stock-panel="{{ stock.id }}">
+        <div class="tabs" data-tabs>
+            <button type="button" class="tab {{ 'on' if active_tab == 'price' }}" data-tab="price">价格告警</button>
+            <button type="button" class="tab {{ 'on' if active_tab == 'pe' }}" data-tab="pe">PE 告警</button>
+            <button type="button" class="tab {{ 'on' if active_tab == 'pb' }}" data-tab="pb">PB 告警</button>
+            <button type="button" class="tab {{ 'on' if active_tab == 'indicator' }}" data-tab="indicator" title="按标的覆盖指标阈值，留空继承全局">指标告警</button>
+        </div>
+
+        <div class="metric-head">
+            <div>
+                <div class="cell-name" style="font-size:16px">{{ stock.stock_name }}</div>
+                <div class="cell-code num">{{ stock.stock_code }}</div>
+            </div>
+            <div class="metric-current">
+                <div class="k">现价</div>
+                <div class="v num">{{ "%.2f"|format(stock.current_price or 0) }}</div>
+            </div>
+            <div class="metric-current">
+                <div class="k">当前 PE</div>
+                <div class="v num">{{ "%.2f"|format(stock.current_pe or 0) }}</div>
+            </div>
+            <div class="metric-current">
+                <div class="k">当前 PB</div>
+                <div class="v num">{{ "%.2f"|format(stock.current_pb or 0) }}</div>
+            </div>
+        </div>
+
+        <!-- 价格告警 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="price" class="{{ 'hidden' if active_tab != 'price' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="warehouse">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="grid-3">
+                    <div class="field">
+                        <label>第一档价格</label>
+                        <input class="input" type="number" step="0.01" name="stock_valueone" id="stock_valueone_{{ stock.id }}"
+                               value="{{ warehouse.stock_valueone if warehouse and warehouse.stock_valueone else '' }}"
+                               placeholder="跌破触发">
+                    </div>
+                    <div class="field">
+                        <label>第二档价格</label>
+                        <input class="input" type="number" step="0.01" name="stock_valuetwo" id="stock_valuetwo_{{ stock.id }}"
+                               value="{{ warehouse.stock_valuetwo if warehouse and warehouse.stock_valuetwo else '' }}"
+                               placeholder="跌破触发">
+                    </div>
+                    <div class="field">
+                        <label>第三档价格</label>
+                        <input class="input" type="number" step="0.01" name="stock_valuethree" id="stock_valuethree_{{ stock.id }}"
+                               value="{{ warehouse.stock_valuethree if warehouse and warehouse.stock_valuethree else '' }}"
+                               placeholder="跌破触发">
+                    </div>
+                </div>
+                <div class="grid-2" style="margin-top:14px">
+                    <div class="field">
+                        <label>目标卖出价</label>
+                        <input class="input" type="number" step="0.01" name="sell_rate" id="sell_rate_{{ stock.id }}"
+                               value="{{ warehouse.sell_rate if warehouse and warehouse.sell_rate else '' }}"
+                               placeholder="达到触发卖出提醒">
+                    </div>
+                    <div class="field">
+                        <label>备注</label>
+                        <input class="input" type="text" name="memo" id="memo_{{ stock.id }}"
+                               value="{{ warehouse.memo if warehouse else '' }}" placeholder="价格策略备注">
+                    </div>
+                </div>
+            </div>
+            <div class="panel-actions">
+                <span class="autosave">留空表示不监控该档位</span>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <svg width="13" height="13"><use href="#i-check"/></svg> 保存价格告警
+                </button>
+            </div>
+        </form>
+
+        <!-- PE 告警 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="pe" class="{{ 'hidden' if active_tab != 'pe' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="pe">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="grid-3">
+                    <div class="field">
+                        <label>PE · 第一档</label>
+                        <input class="input" type="number" step="0.01" name="pe_valueone" id="pe_valueone_{{ stock.id }}"
+                               value="{{ pe_record.pe_valueone if pe_record and pe_record.pe_valueone else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PE · 第二档</label>
+                        <input class="input" type="number" step="0.01" name="pe_valuetwo" id="pe_valuetwo_{{ stock.id }}"
+                               value="{{ pe_record.pe_valuetwo if pe_record and pe_record.pe_valuetwo else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PE · 第三档</label>
+                        <input class="input" type="number" step="0.01" name="pe_valuethree" id="pe_valuethree_{{ stock.id }}"
+                               value="{{ pe_record.pe_valuethree if pe_record and pe_record.pe_valuethree else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                </div>
+                <div class="field" style="margin-top:14px">
+                    <label>备注</label>
+                    <input class="input" type="text" name="pe_memo" id="pe_memo_{{ stock.id }}"
+                           value="{{ pe_record.memo if pe_record else '' }}" placeholder="估值判断依据">
+                </div>
+            </div>
+            <div class="panel-actions">
+                <span class="autosave">留空表示不监控该档位</span>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <svg width="13" height="13"><use href="#i-check"/></svg> 保存 PE 告警
+                </button>
+            </div>
+        </form>
+
+        <!-- PB 告警 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="pb" class="{{ 'hidden' if active_tab != 'pb' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="pb">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="grid-3">
+                    <div class="field">
+                        <label>PB · 第一档</label>
+                        <input class="input" type="number" step="0.01" name="pb_valueone" id="pb_valueone_{{ stock.id }}"
+                               value="{{ pb_record.pb_valueone if pb_record and pb_record.pb_valueone else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PB · 第二档</label>
+                        <input class="input" type="number" step="0.01" name="pb_valuetwo" id="pb_valuetwo_{{ stock.id }}"
+                               value="{{ pb_record.pb_valuetwo if pb_record and pb_record.pb_valuetwo else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PB · 第三档</label>
+                        <input class="input" type="number" step="0.01" name="pb_valuethree" id="pb_valuethree_{{ stock.id }}"
+                               value="{{ pb_record.pb_valuethree if pb_record and pb_record.pb_valuethree else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                </div>
+                <div class="field" style="margin-top:14px">
+                    <label>备注</label>
+                    <input class="input" type="text" name="pb_memo" id="pb_memo_{{ stock.id }}"
+                           value="{{ pb_record.memo if pb_record else '' }}" placeholder="估值判断依据">
+                </div>
+            </div>
+            <div class="panel-actions">
+                <span class="autosave">留空表示不监控该档位</span>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <svg width="13" height="13"><use href="#i-check"/></svg> 保存 PB 告警
+                </button>
+            </div>
+        </form>
+
+        <!-- 指标告警（006 指标监控）：留空 = 继承全局 IND_* 阈值 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="indicator" class="{{ 'hidden' if active_tab != 'indicator' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="indicator">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="hint-inline">
+                    <svg width="15" height="15"><use href="#i-info"/></svg>
+                    <div>以下为 <b>{{ stock.stock_name }}</b> 的专属阈值，<b>留空即继承全局值</b>（占位提示里的数就是全局值）。
+                        保存后下一轮询周期生效，指标类告警单独按 {{ indicator_cooldown_hours }} 小时冷却。</div>
+                </div>
+                <div class="section-title">长期指标</div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label>52 周新低阈值（%）</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="100" name="low52w_near_pct"
+                               id="low52w_near_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.low52w_near_pct) if indicator_config and indicator_config.low52w_near_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.low52w_near_pct }}">
+                    </div>
+                    <div class="field">
+                        <label>52 周回撤阈值（%）</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="100" name="drawdown_52w_pct"
+                               id="drawdown_52w_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.drawdown_52w_pct) if indicator_config and indicator_config.drawdown_52w_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.drawdown_52w_pct }}">
+                    </div>
+                </div>
+                <div class="section-title">短期指标</div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label>20 日跑输（百分点）</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="100" name="rs20_pct"
+                               id="rs20_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs20_pct) if indicator_config and indicator_config.rs20_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs20_pct }}">
+                    </div>
+                    <div class="field">
+                        <label>5 日倍数阈值</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="20" name="rs5_ratio"
+                               id="rs5_ratio_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs5_ratio) if indicator_config and indicator_config.rs5_ratio is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs5_ratio }}">
+                    </div>
+                    <div class="field">
+                        <label>护栏 · 个股 5 日最小跌幅（%）</label>
+                        <input class="input" type="number" step="0.1" min="0" max="100" name="rs5_min_drop_pct"
+                               id="rs5_min_drop_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs5_min_drop_pct) if indicator_config and indicator_config.rs5_min_drop_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs5_min_drop_pct }}">
+                    </div>
+                    <div class="field">
+                        <label>护栏 · 基准 5 日最小跌幅（%）</label>
+                        <input class="input" type="number" step="0.1" min="0" max="100" name="rs5_min_bench_drop_pct"
+                               id="rs5_min_bench_drop_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs5_min_bench_drop_pct) if indicator_config and indicator_config.rs5_min_bench_drop_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs5_min_bench_drop_pct }}">
+                    </div>
+                </div>
+            </div>
+            <div class="panel-actions">
+                <span class="autosave">全部留空 = 完全继承全局配置</span>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <svg width="13" height="13"><use href="#i-check"/></svg> 保存指标告警
+                </button>
+            </div>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

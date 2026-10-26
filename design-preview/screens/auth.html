@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 / 注册 · 股池监控台（设计稿）</title>
+<link rel="stylesheet" href="../assets/design.css">
+<style>
+  .theme-float { position: fixed; right: 18px; top: 18px; z-index: 30; }
+</style>
+</head>
+<body>
+
+<button class="icon-btn theme-float" id="theme-btn" title="切换深色 / 浅色">
+  <svg width="16" height="16"><use href="#i-moon" id="theme-icon"/></svg>
+</button>
+
+<div class="auth-shell">
+  <!-- 左：品牌 / 价值说明 -->
+  <aside class="auth-side">
+    <div class="brand" style="padding:0">
+      <div class="brand-mark">股</div>
+      <div><div class="brand-name">股池监控台</div><div class="brand-sub">Stock Monitor</div></div>
+    </div>
+
+    <div>
+      <div class="auth-quote">把盯盘的活<br>交给<em>规则和机器</em></div>
+      <div class="auth-sub">
+        自动跟踪持仓标的的价格、估值与均线信号；52 周位置与相对强弱一旦异常，邮件第一时间送达。
+        你只需要做决策，不需要一直盯着屏幕。
+      </div>
+      <div class="auth-metrics">
+        <div class="auth-metric"><div class="v num">12</div><div class="k">监控标的</div></div>
+        <div class="auth-metric"><div class="v num">4</div><div class="k">判定指标</div></div>
+        <div class="auth-metric"><div class="v num up">2</div><div class="k">今日告警</div></div>
+      </div>
+    </div>
+
+    <div style="font-size:11.5px;color:var(--muted);line-height:1.8">
+      数据来源：雪球（公开行情接口）　·　本系统仅供个人研究使用，不构成投资建议
+    </div>
+  </aside>
+
+  <!-- 右：登录 / 注册 -->
+  <div class="auth-form-side">
+    <div class="card auth-card">
+      <div class="auth-tabs" data-tabs>
+        <button class="auth-tab on" data-tab="login">登录</button>
+        <button class="auth-tab" data-tab="register">注册</button>
+      </div>
+
+      <!-- 登录 -->
+      <div data-body="login">
+        <div class="auth-title">欢迎回来</div>
+        <div class="auth-desc">使用账号继续管理你的订单与告警</div>
+        <div class="field" style="margin-bottom:14px">
+          <label>用户名</label>
+          <input class="input" value="lemon" style="font-family:var(--sans)">
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label>密码</label>
+          <input class="input" type="password" value="123456">
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:18px">
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" checked style="accent-color:var(--accent)"> 记住我</label>
+          <a href="#" style="color:var(--accent);font-weight:600">忘记密码？</a>
+        </div>
+        <a class="btn btn-primary btn-block" href="orders.html">登录</a>
+        <div class="divider">或</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.7;text-align:center">
+          首次使用？切换到上方「注册」创建账号
+        </div>
+      </div>
+
+      <!-- 注册 -->
+      <div data-body="register" class="hidden">
+        <div class="auth-title">创建账号</div>
+        <div class="auth-desc">同一浏览器内所有账号共享订单数据（内网单角色）</div>
+        <div class="field" style="margin-bottom:14px">
+          <label>用户名 <span class="req">*</span></label>
+          <input class="input" placeholder="3–20 位字母、数字或下划线" style="font-family:var(--sans)">
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label>邮箱</label>
+          <input class="input" placeholder="用于接收告警邮件" style="font-family:var(--sans)">
+        </div>
+        <div class="field" style="margin-bottom:6px">
+          <label>密码 <span class="req">*</span></label>
+          <input class="input" type="password" value="Abc123456">
+        </div>
+        <div class="strength"><i style="width:72%;background:var(--down)"></i></div>
+        <div class="req-row">
+          <span class="req-item ok"><svg width="11" height="11"><use href="#i-check"/></svg> 至少 6 位</span>
+          <span class="req-item ok"><svg width="11" height="11"><use href="#i-check"/></svg> 含字母</span>
+          <span class="req-item ok"><svg width="11" height="11"><use href="#i-check"/></svg> 含数字</span>
+          <span class="req-item"><svg width="11" height="11"><use href="#i-minus"/></svg> 建议含符号</span>
+        </div>
+        <div class="field" style="margin:14px 0 18px">
+          <label>确认密码 <span class="req">*</span></label>
+          <input class="input" type="password" value="Abc123456">
+        </div>
+        <button class="btn btn-primary btn-block">注册</button>
+      </div>
+
+      <div class="auth-foot">登录即表示同意内部使用规范　·　<a href="#">联系管理员</a></div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/app.js"></script>
+<script>
+  // 登录/注册的 auth-tab 与 .tab 不同名，单独绑定
+  document.querySelectorAll('.auth-tabs').forEach(group => {
+    group.querySelectorAll('.auth-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        group.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('on', t === tab));
+        document.querySelectorAll('[data-body]').forEach(b => {
+          b.classList.toggle('hidden', b.dataset.body !== tab.dataset.tab);
+        });
+      });
+    });
+  });
+</script>
+</body>
+</html>

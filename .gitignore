@@ -1,0 +1,48 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- 虚拟环境 ----
+venv/
+env/
+ENV/
+stockenv/
+.venv/
+
+# ---- 密钥与本地配置（D-01/D-08：严禁提交） ----
+.env
+*.env
+!.env.example
+*.pem
+*.key
+*.p12
+config.local.py
+
+# ---- 日志与运行时产物 ----
+logs/
+*.log
+*.sqlite3
+*.db
+
+# ---- 测试与缓存 ----
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# ---- IDE ----
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

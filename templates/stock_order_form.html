@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '编辑订单' if form_action == 'edit' else '添加订单' }} - 股池监控台{% endblock %}
+{% block crumb %}{{ '编辑订单' if form_action == 'edit' else '添加订单' }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="page-title">{{ '编辑订单' if form_action == 'edit' else '添加订单' }}</h1>
+        <p class="page-desc">
+            {% if form_action == 'edit' and stock %}
+            同一个模板服务「添加」与「编辑」；编辑态额外展示 K 线图与状态开关
+            {% else %}
+            标的信息 / 价格阈值 / 估值阈值 / 备注
+            {% endif %}
+        </p>
+    </div>
+    <a href="{{ url_for('stock.stock_list') }}" class="btn btn-ghost">
+        <svg width="14" height="14"><use href="#i-list"/></svg> 返回列表
+    </a>
+</div>
+
+<form method="POST"
+      action="{{ url_for('stock.edit_stock', id=stock.id) if form_action == 'edit' else url_for('stock.create_stock') }}"
+      data-submit-once>
+<div class="form-layout">
+    <div>
+        <!-- 1. 标的信息 -->
+        <div class="card panel">
+            <div class="panel-head">
+                <span class="step-no">1</span>
+                <span class="panel-title">标的信息</span>
+                <span class="panel-hint">* 为必填</span>
+            </div>
+            <div class="grid-2">
+                <div class="field">
+                    <label>订单名称 <span class="req">*</span></label>
+                    <input class="input" type="text" name="stock_name" required
+                           value="{{ (stock.stock_name or '') if stock else '' }}" placeholder="如：贵州茅台">
+                    <div class="help">用于列表展示，建议填股票简称</div>
+                </div>
+                <div class="field">
+                    <label>订单代码 <span class="req">*</span></label>
+                    <input class="input" type="text" name="stock_code" required
+                           value="{{ (stock.stock_code or '') if stock else '' }}" placeholder="如：SH600519">
+                    <div class="help">需带交易所前缀 SH / SZ / BJ，全库唯一</div>
+                </div>
+            </div>
+            <div class="grid-2" style="margin-top:14px">
+                <div class="field">
+                    <label>目标市盈率 PE</label>
+                    <input class="input" type="number" step="0.01" name="target_pettm"
+                           value="{{ (stock.target_pettm or '') if stock else '' }}" placeholder="选填">
+                </div>
+                <div class="field">
+                    <label>目标市净率 PB</label>
+                    <input class="input" type="number" step="0.01" name="target_pb"
+                           value="{{ (stock.target_pb or '') if stock else '' }}" placeholder="选填">
+                </div>
+            </div>
+            {% if form_action == 'edit' and stock %}
+            <div class="grid-2" style="margin-top:14px">
+                <div class="field">
+                    <label>监控状态</label>
+                    <select class="select" name="status" style="width:100%;padding:9px 12px">
+                        <option value="active" {{ 'selected' if stock.status == 'active' }}>监控中</option>
+                        <option value="inactive" {{ 'selected' if stock.status != 'active' }}>已暂停</option>
+                    </select>
+                    <div class="help">暂停后不再拉取行情，也不参与告警判定</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 2. 价格阈值 -->
+        <div class="card panel">
+            <div class="panel-head">
+                <span class="step-no">2</span>
+                <span class="panel-title">价格阈值</span>
+                <span class="panel-hint">第一档 &gt; 第二档 &gt; 第三档</span>
+            </div>
+            <div class="grid-2" style="margin-bottom:16px">
+                <div class="field">
+                    <label>目标卖出价</label>
+                    <input class="input" type="number" step="0.01" name="sell_rate" data-sell
+                           value="{{ (warehouse.sell_rate or '') if warehouse else '' }}" placeholder="选填">
+                    <div class="help" data-sell-hint>
+                        {# 现价存 stock_warehouse，不在 stock_master（master 表没有该列），别写成 stock.current_price #}
+                        {% if form_action == 'edit' and warehouse and warehouse.current_price and warehouse.sell_rate %}
+                        现价 <b class="num">{{ "%.2f"|format(warehouse.current_price) }}</b>，还需
+                        {% set gap = (warehouse.sell_rate - warehouse.current_price) / warehouse.current_price * 100 %}
+                        <b class="num {{ 'up' if gap >= 0 else 'down' }}">{{ "%+.1f"|format(gap) }}%</b> 触发
+                        {% else %}
+                        达到该价格触发卖出提醒
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="field">
+                    <label>股息率 %</label>
+                    <input class="input" type="number" step="0.01" name="dividend_yield"
+                           value="{{ (warehouse.dividend_yield or '') if warehouse else '' }}" placeholder="选填">
+                </div>
+            </div>
+            <div class="ladder" data-current="{{ warehouse.current_price if form_action == 'edit' and warehouse and warehouse.current_price else '' }}">
+                <div class="ladder-row">
+                    <span class="ladder-tag">第一档</span>
+                    <div class="field" style="margin:0">
+                        <input class="input" type="number" step="0.01" name="stock_valueone" data-ladder
+                               value="{{ (warehouse.stock_valueone or '') if warehouse else '' }}" placeholder="选填">
+                    </div>
+                    <span class="delta">—</span>
+                </div>
+                <div class="ladder-row">
+                    <span class="ladder-tag">第二档</span>
+                    <div class="field" style="margin:0">
+                        <input class="input" type="number" step="0.01" name="stock_valuetwo" data-ladder
+                               value="{{ (warehouse.stock_valuetwo or '') if warehouse else '' }}" placeholder="选填">
+                    </div>
+                    <span class="delta">—</span>
+                </div>
+                <div class="ladder-row">
+                    <span class="ladder-tag">第三档</span>
+                    <div class="field" style="margin:0">
+                        <input class="input" type="number" step="0.01" name="stock_valuethree" data-ladder
+                               value="{{ (warehouse.stock_valuethree or '') if warehouse else '' }}" placeholder="选填">
+                    </div>
+                    <span class="delta">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 估值阈值 -->
+        <div class="card panel">
+            <div class="panel-head">
+                <span class="step-no">3</span>
+                <span class="panel-title">估值阈值</span>
+                <span class="panel-hint">PE / PB 三档，选填</span>
+            </div>
+            <div class="sub-label">PE 阈值</div>
+            <div class="grid-3">
+                <div class="field">
+                    <label>第一档</label>
+                    <input class="input" type="number" step="0.01" name="pe_valueone"
+                           value="{{ (pe_record.pe_valueone or '') if pe_record else '' }}" placeholder="选填">
+                </div>
+                <div class="field">
+                    <label>第二档</label>
+                    <input class="input" type="number" step="0.01" name="pe_valuetwo"
+                           value="{{ (pe_record.pe_valuetwo or '') if pe_record else '' }}" placeholder="选填">
+                </div>
+                <div class="field">
+                    <label>第三档</label>
+                    <input class="input" type="number" step="0.01" name="pe_valuethree"
+                           value="{{ (pe_record.pe_valuethree or '') if pe_record else '' }}" placeholder="选填">
+                </div>
+            </div>
+            <!-- 设计稿只保留一个备注框（第 4 段）。PE / PB 备注不再由本表单编辑，
+                 以隐藏字段回传原值——否则保存时会被空值覆盖（后端按 pe_memo / pb_memo 取值）。 -->
+            <input type="hidden" name="pe_memo" value="{{ (pe_record.memo or '') if pe_record else '' }}">
+            <div class="sub-label" style="margin-top:18px">PB 阈值</div>
+            <div class="grid-3">
+                <div class="field">
+                    <label>第一档</label>
+                    <input class="input" type="number" step="0.01" name="pb_valueone"
+                           value="{{ (pb_record.pb_valueone or '') if pb_record else '' }}" placeholder="选填">
+                </div>
+                <div class="field">
+                    <label>第二档</label>
+                    <input class="input" type="number" step="0.01" name="pb_valuetwo"
+                           value="{{ (pb_record.pb_valuetwo or '') if pb_record else '' }}" placeholder="选填">
+                </div>
+                <div class="field">
+                    <label>第三档</label>
+                    <input class="input" type="number" step="0.01" name="pb_valuethree"
+                           value="{{ (pb_record.pb_valuethree or '') if pb_record else '' }}" placeholder="选填">
+                </div>
+            </div>
+            <input type="hidden" name="pb_memo" value="{{ (pb_record.memo or '') if pb_record else '' }}">
+        </div>
+
+        <!-- 4. 备注 -->
+        <div class="card panel">
+            <div class="panel-head">
+                <span class="step-no">4</span>
+                <span class="panel-title">备注</span>
+            </div>
+            <div class="field">
+                <textarea name="memo" placeholder="建仓 / 加仓计划，例如：第一档试仓 20%，第三档加至满仓">{{ (warehouse.memo or '') if warehouse else '' }}</textarea>
+            </div>
+        </div>
+
+        <!-- K 线（仅编辑态） -->
+        {% if form_action == 'edit' and stock %}
+        <div class="card panel">
+            <div class="panel-head">
+                <span class="step-no" style="background:var(--info-soft);color:var(--info)">
+                    <svg width="13" height="13"><use href="#i-chart"/></svg>
+                </span>
+                <span class="panel-title">K 线与均线</span>
+                <span class="panel-hint">收盘价 / MA5 / MA10 / MA30</span>
+            </div>
+            <div class="kline-box" id="klineBox">
+                <div class="kline-placeholder">
+                    <div>
+                        <div class="skeleton" style="width:180px;margin:0 auto 10px"></div>
+                        正在加载 K 线数据…
+                    </div>
+                </div>
+            </div>
+            <div class="help" id="klineSignal" style="margin-top:10px"></div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 右侧：实时行情 / 填写提示 / 操作 -->
+    <div class="rail">
+        <div class="card rail-card">
+            <div class="rail-title">实时行情</div>
+            {% if form_action == 'edit' and stock %}
+            <div class="rail-row"><span>现价</span>
+                {# 现价来自 warehouse（master 表无此列）；未采集时显示 —，不显示 0.00 #}
+                <b class="num price">{{ "%.2f"|format(warehouse.current_price) if warehouse and warehouse.current_price else '—' }}</b></div>
+            <div class="rail-row"><span>PE (TTM)</span><b class="num">{{ "%.2f"|format(stock.current_pe or 0) }}</b></div>
+            <div class="rail-row"><span>PB</span><b class="num">{{ "%.2f"|format(stock.current_pb or 0) }}</b></div>
+            <div class="rail-row"><span>监控状态</span>
+                <b class="{{ 'down' if stock.status == 'active' else 'muted' }}">
+                    {{ '监控中' if stock.status == 'active' else '已暂停' }}</b></div>
+            <div class="rail-row"><span>代码</span><b class="num">{{ stock.stock_code }}</b></div>
+            {# 行情是采集快照不是实时推送，且暂停监控的订单不再采集——必须给出时间，否则会误以为是当下价格 #}
+            <div class="rail-row"><span>行情时间</span>
+                <b class="num muted">{{ (stock.updated_at|string)[:16] if stock.updated_at else '—' }}</b></div>
+            {% if stock.status != 'active' %}
+            <div class="help" style="margin-top:8px">已暂停监控，行情不再刷新</div>
+            {% endif %}
+            {% else %}
+            <ul class="tips">
+                <li>保存订单后自动开始采集行情</li>
+                <li>现价 / PE / PB 每轮询周期刷新</li>
+                <li>代码前缀错误会拉取不到行情</li>
+            </ul>
+            {% endif %}
+        </div>
+
+        <div class="card rail-card">
+            <div class="rail-title">填写提示</div>
+            <ul class="tips">
+                <li>三档阈值应<b>依次递减</b>，跌到哪一档触发哪一档</li>
+                <li>只填第一档也能用，二三档留空即可</li>
+                <li>代码需带交易所前缀 SH / SZ / BJ</li>
+                <li>告警默认冷却 4 小时，避免重复打扰</li>
+            </ul>
+        </div>
+
+        <div class="card rail-card">
+            <div class="rail-title">操作</div>
+            <div style="display:flex;gap:10px">
+                <button type="reset" class="btn btn-ghost" style="flex:1">重置</button>
+                <button type="submit" class="btn btn-primary" style="flex:1">
+                    <svg width="15" height="15"><use href="#i-check"/></svg> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+{% if form_action == 'edit' and stock %}
+<!-- Chart.js 4.4.1（版本锁定，K 线图唯一外部依赖；加载失败时降级为文字提示） -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+/* 依赖模板变量注入的页面专属脚本（开发规范允许保留在 block scripts） */
+(function () {
+    const stockId = {{ stock.id | tojson }};
+    const stockLabel = {{ (stock.stock_name ~ ' (' ~ stock.stock_code ~ ')') | tojson }};
+    const box = document.getElementById('klineBox');
+    const signalBox = document.getElementById('klineSignal');
+
+    // 与 models/stock_kline.check_signal() 的取值保持一致（MA5 与 MA30 比较）
+    const SIGNAL_MAP = {
+        golden_cross: { text: '金叉', cls: 'up', desc: 'MA5 上穿 MA30' },
+        death_cross: { text: '死叉', cls: 'down', desc: 'MA5 下穿 MA30' },
+        normal: { text: '震荡', cls: 'muted', desc: 'MA5 与 MA30 未明显偏离' }
+    };
+
+    function placeholder(html) {
+        box.innerHTML = '<div class="kline-placeholder"><div>' + html + '</div></div>';
+    }
+
+    function cssVar(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    // 接口返回的是 Decimal 字符串 / NULL，必须转成数值或 null，否则图表与 tooltip 都算不出来
+    function toNum(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const n = parseFloat(value);
+        return isFinite(n) ? n : null;
+    }
+
+    function renderSignal(klines) {
+        const last = klines[klines.length - 1];
+        const sig = SIGNAL_MAP[last.signal_type] || SIGNAL_MAP.normal;
+        signalBox.innerHTML = '最新信号：<b class="' + sig.cls + '">' + sig.text + '</b>（'
+            + sig.desc + '）　数据截至 ' + (last.trade_date || '').substring(0, 10);
+    }
+
+    function draw(klines) {
+        box.innerHTML = '<canvas id="klineChart"></canvas>';
+        // 轴上只显示 MM-DD 省空间，悬停时再给出完整日期
+        const fullDates = klines.map(k => (k.trade_date || '').substring(0, 10));
+        const labels = fullDates.map(d => d.substring(5));
+        new Chart(document.getElementById('klineChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    // 配色按用户参考图：收盘价青绿实线，三条均线粉/蓝/黄虚线（色值定义在 theme.css 的 --kline-*）
+                    { label: '收盘价', data: klines.map(k => toNum(k.close_price)),
+                      borderColor: cssVar('--kline-price'), borderWidth: 2, pointRadius: 0, tension: .25 },
+                    { label: 'MA5', data: klines.map(k => toNum(k.ma5)),
+                      borderColor: cssVar('--kline-ma5'), borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, tension: .25 },
+                    { label: 'MA10', data: klines.map(k => toNum(k.ma10)),
+                      borderColor: cssVar('--kline-ma10'), borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, tension: .25 },
+                    { label: 'MA30', data: klines.map(k => toNum(k.ma30)),
+                      borderColor: cssVar('--kline-ma30'), borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, tension: .25 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                // 早期 K 线可能没有 MA 值（历史数据未回填），跨越空点而不是断成碎片
+                spanGaps: true,
+                // 悬停时同时列出该日全部 4 个值（默认 nearest 只显示最近的一个，会让人以为"显示不完整"）
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    title: { display: true, text: stockLabel + ' K线图',
+                             color: cssVar('--text-2'), font: { size: 13 } },
+                    legend: { labels: { color: cssVar('--muted'), boxWidth: 14, font: { size: 11 } } },
+                    tooltip: {
+                        backgroundColor: cssVar('--surface'),
+                        titleColor: cssVar('--text'),
+                        bodyColor: cssVar('--text-2'),
+                        borderColor: cssVar('--border'),
+                        borderWidth: 1,
+                        padding: 10,
+                        boxWidth: 10,
+                        boxHeight: 10,
+                        titleFont: { size: 12 },
+                        bodyFont: { size: 12 },
+                        callbacks: {
+                            title: items => fullDates[items[0].dataIndex] || '',
+                            label: ctx => {
+                                const v = ctx.parsed.y;
+                                const text = (v === null || v === undefined) ? '无数据' : v.toFixed(2);
+                                return ' ' + ctx.dataset.label + '：' + text;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: cssVar('--muted'), maxTicksLimit: 10, font: { size: 10 } },
+                         grid: { color: cssVar('--border-soft') } },
+                    y: { ticks: { color: cssVar('--muted'), font: { size: 10 } },
+                         grid: { color: cssVar('--border-soft') } }
+                }
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (typeof Chart === 'undefined') {
+            placeholder('Chart.js 4.4.1 未加载（离线或 CDN 不可达）<br>K 线图不可用，其余功能不受影响');
+            return;
+        }
+        fetch('/stock/api/kline/' + stockId)
+            .then(resp => resp.json())
+            .then(data => {
+                if (data.klines && data.klines.length > 0) {
+                    draw(data.klines);
+                    renderSignal(data.klines);
+                } else {
+                    placeholder('暂无 K 线数据<br>需先采集该标的的日线');
+                }
+            })
+            .catch(() => placeholder('K 线数据加载失败'));
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

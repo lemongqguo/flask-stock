@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出错了 - 股池监控台</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link href="{{ static_url('css/theme.css') }}" rel="stylesheet">
+    <script>
+      try {
+        var t = localStorage.getItem('stock-ui-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) { /* 保持默认深色 */ }
+    </script>
+</head>
+<body>
+<div class="error-shell">
+    <div class="card error-card">
+        <div class="error-code">{{ error_code or 'ERR' }}</div>
+        <div class="error-title">{{ error_message if error_message else '发生错误' }}</div>
+        <div class="error-desc">
+            {{ error_description if error_description else '系统遇到意外情况，无法完成您的请求。' }}
+        </div>
+        <div class="error-actions">
+            <a href="javascript:history.back()" class="btn btn-ghost">
+                <svg width="14" height="14"><use href="#i-history"/></svg> 返回上页
+            </a>
+            <a href="{{ url_for('stock.stock_list') }}" class="btn btn-primary">
+                <svg width="14" height="14"><use href="#i-list"/></svg> 回到首页
+            </a>
+        </div>
+    </div>
+</div>
+<script src="{{ static_url('js/theme.js') }}"></script>
+</body>
+</html>

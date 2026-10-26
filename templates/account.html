@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}账户设置 - 股池监控台{% endblock %}
+{% block crumb %}账户设置{% endblock %}
+
+{% macro notify_toggle(field, label, hint) -%}
+    {# 原生 checkbox 隐藏，视觉沿用表格里的 .status/.switch；on 态由 theme.js 与 checkbox 同步 #}
+    <label class="notify-toggle" title="{{ hint }}">
+        <input type="checkbox" name="{{ field }}" value="1"
+               {% if notify_prefs.get(field) %}checked{% endif %}>
+        <span class="status {{ 'on' if notify_prefs.get(field) }}"><i class="switch"></i></span>
+        <span>{{ label }}</span>
+    </label>
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="page-title">账户设置</h1>
+        <p class="page-desc">个人资料、默认基准指数与告警通知，保存后立即生效</p>
+    </div>
+</div>
+
+<div class="account-layout">
+    <!-- 左：二级导航（锚点 + 退出登录） -->
+    <div class="card account-nav">
+        <a class="acc-item {{ 'on' if active_tab != 'password' }}" href="#profile">
+            <svg width="15" height="15"><use href="#i-user"/></svg> 个人资料
+        </a>
+        <a class="acc-item {{ 'on' if active_tab == 'password' }}" href="#password">
+            <svg width="15" height="15"><use href="#i-lock"/></svg> 修改密码
+        </a>
+        <a class="acc-item" href="#notify">
+            <svg width="15" height="15"><use href="#i-mail"/></svg> 通知偏好
+        </a>
+        <div style="border-top:1px dashed var(--border-soft);margin:8px 0"></div>
+        <a class="acc-item danger" href="{{ url_for('auth.logout') }}">
+            <svg width="15" height="15"><use href="#i-arrow-down"/></svg> 退出登录
+        </a>
+    </div>
+
+    <div class="card" id="profile">
+        <!-- 头部：头像 + 账号 + 最后登录 -->
+        <div class="profile-head">
+            <span class="avatar-lg">{{ (user.username or '?')[:1] }}</span>
+            <div>
+                <div style="font-size:17px;font-weight:700">{{ user.username }}</div>
+                <div class="muted" style="font-size:12.5px;margin-top:3px">
+                    {{ user.email or '未设置邮箱' }}　·　最后登录 {{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else '未知' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- 个人资料 + 告警通知（一个表单一次保存） -->
+        <form method="POST" action="{{ url_for('auth.profile') }}" data-submit-once>
+            <div style="padding:20px">
+                {% if pref_owner %}
+                <div class="hint-inline warn" style="margin:0 0 16px">
+                    <svg width="15" height="15"><use href="#i-alert"/></svg>
+                    <div>当前生效的通知偏好由账户「{{ pref_owner }}」保存（多账户时以最近保存的为准）；保存一次即以本账户为准。</div>
+                </div>
+                {% endif %}
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label>用户名</label>
+                        <input class="input" name="username" value="{{ user.username or '' }}" required>
+                    </div>
+                    <div class="field">
+                        <label>邮箱</label>
+                        <input class="input" name="email" value="{{ user.email or '' }}" placeholder="用于接收告警邮件">
+                    </div>
+                </div>
+
+                <div class="grid-2" style="margin-top:14px">
+                    <div class="field">
+                        <label>手机号</label>
+                        <input class="input" name="phone" value="{{ user.phone or '' }}" placeholder="选填">
+                    </div>
+                    <div class="field">
+                        <label>默认基准指数</label>
+                        <select class="select" name="bench_code" style="width:100%">
+                            {% for item in bench_choices %}
+                            <option value="{{ item.code }}" {% if item.code == bench_code %}selected{% endif %}>
+                                {{ item.name }} ({{ item.code }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="help">用于指标监控的相对强弱计算；当前基准「{{ bench_name }}」{%
+                            if bench_latest %}已采集至 {{ bench_latest }}{% else %}尚无日线数据（监控线程会在交易时段自动采集）{% endif %}</div>
+                    </div>
+                </div>
+
+                <div class="section-title" id="notify">告警通知</div>
+                <div class="notify-list">
+                    {{ notify_toggle('notify_price', '价格告警', '卖出价与三档建仓价') }}
+                    {{ notify_toggle('notify_valuation', 'PE / PB 告警', '估值档位告警') }}
+                    {{ notify_toggle('notify_indicator', '指标告警', '52 周与相对强弱类指标') }}
+                    {{ notify_toggle('notify_daily', '每日汇总邮件', '每天一封近 24 小时告警汇总') }}
+                </div>
+                <div class="help" style="margin-top:10px">关闭某类告警只是**不发邮件**，告警仍会照常记录到「告警历史」。</div>
+
+                {% if recipients.recipients %}
+                <div class="hint-inline" style="margin:14px 0 0">
+                    <svg width="15" height="15"><use href="#i-mail"/></svg>
+                    <div>告警邮件将发送至 <b>{{ recipients.recipients|join('、') }}</b>{%
+                        if recipients.source == 'env' %}（来自环境变量 <code>ALARM_RECIPIENTS</code>）{%
+                        elif recipients.source == 'account' %}（环境变量未配置，回退到账户邮箱）{% endif %}
+                        ——与监控发信同源，这里显示的地址就是实际收件人。</div>
+                </div>
+                {% else %}
+                <div class="hint-inline warn" style="margin:14px 0 0">
+                    <svg width="15" height="15"><use href="#i-alert"/></svg>
+                    <div>未解析到收件人：<code>ALARM_RECIPIENTS</code> 为空且账户邮箱未设置，告警只会落库、不会发信。</div>
+                </div>
+                {% endif %}
+
+                <div class="panel-actions" style="padding:18px 0 0;margin-top:18px">
+                    <span class="autosave">上次更新：{{ user.updated_at.strftime('%Y-%m-%d %H:%M') if user.updated_at else '尚未保存过' }}</span>
+                    <button type="submit" class="btn btn-primary">
+                        <svg width="15" height="15"><use href="#i-check"/></svg> 保存资料
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <!-- 修改密码（同一张卡片内，与设计稿一致） -->
+        <div id="password" style="border-top:1px solid var(--border-soft);padding:20px">
+            <div class="section-title" style="margin-top:0">修改密码</div>
+            <form method="POST" action="{{ url_for('auth.change_password') }}" data-submit-once>
+                <div class="grid-3">
+                    <div class="field">
+                        <label>当前密码</label>
+                        <input class="input" type="password" name="old_password" required>
+                    </div>
+                    <div class="field">
+                        <label>新密码</label>
+                        <input class="input" type="password" name="new_password" required placeholder="至少 6 位">
+                        <div class="strength"><i data-pw-strength style="width:0"></i></div>
+                    </div>
+                    <div class="field">
+                        <label>确认新密码</label>
+                        <input class="input" type="password" name="confirm_password" required>
+                    </div>
+                </div>
+                <div class="hint-inline warn" style="margin:16px 0 0">
+                    <svg width="15" height="15"><use href="#i-alert"/></svg>
+                    <div>修改密码会保持当前登录状态；若在其它设备登录，那些设备需要重新登录。</div>
+                </div>
+                <div style="margin-top:16px">
+                    <button type="submit" class="btn btn-primary">
+                        <svg width="15" height="15"><use href="#i-lock"/></svg> 更新密码
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

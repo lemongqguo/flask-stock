@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}股池监控台{% endblock %}</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link href="{{ static_url('css/theme.css') }}" rel="stylesheet">
+    <script>
+      /* 早期应用主题，避免浅色主题下白屏闪烁（theme.js 只负责切换与记忆） */
+      try {
+        var t = localStorage.getItem('stock-ui-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) { /* 隐私模式等场景保持默认深色 */ }
+    </script>
+</head>
+<body>
+<div class="shell">
+    <!-- 侧栏导航 -->
+    <aside class="sidebar">
+        <a class="brand" href="{{ url_for('stock.stock_list') }}">
+            <span class="brand-mark">股</span>
+            <span>
+                <div class="brand-name">股池监控台</div>
+                <div class="brand-sub">Stock Monitor</div>
+            </span>
+        </a>
+
+        {% if session.user_id %}
+        {# 侧栏分三组（交易 / 监控 / 系统），与 design-preview 设计稿一致：
+           每组「组标题 + nav」外包一层 div，`.sidebar` 的 gap 就只落在组与组之间 #}
+        <div>
+            <div class="nav-group-label"><span>交易</span></div>
+            <nav class="nav">
+                <a class="nav-item {{ 'active' if request.endpoint == 'stock.stock_list' }}" href="{{ url_for('stock.stock_list') }}" title="订单列表">
+                    <svg width="16" height="16"><use href="#i-list"/></svg> <span>订单列表</span>
+                </a>
+                <a class="nav-item {{ 'active' if request.endpoint in ['stock.create_stock', 'stock.edit_stock'] }}" href="{{ url_for('stock.create_stock') }}" title="添加订单">
+                    <svg width="16" height="16"><use href="#i-plus"/></svg> <span>添加订单</span>
+                </a>
+                <a class="nav-item {{ 'active' if request.endpoint == 'stock.alarm_settings' }}" href="{{ url_for('stock.alarm_settings') }}" title="告警设置">
+                    <svg width="16" height="16"><use href="#i-bell"/></svg> <span>告警设置</span>
+                </a>
+                <a class="nav-item {{ 'active' if request.endpoint == 'stock.recent_alarms' }}" href="{{ url_for('stock.recent_alarms') }}" title="告警历史">
+                    <svg width="16" height="16"><use href="#i-history"/></svg> <span>告警历史</span>
+                </a>
+            </nav>
+        </div>
+
+        <div>
+            <div class="nav-group-label">
+                <span>监控</span>
+                {# 折叠控件：折叠后侧栏只留图标。图标由 theme.js 按当前状态切换（chevron 方向） #}
+                <button type="button" class="side-toggle" data-side-toggle
+                        aria-expanded="true" aria-label="折叠侧栏" title="折叠侧栏">
+                    <svg width="14" height="14"><use href="#i-chevron-left"/></svg>
+                </button>
+            </div>
+            <nav class="nav">
+                <a class="nav-item {{ 'active' if request.endpoint == 'stock.indicator_list' }}" href="{{ url_for('stock.indicator_list') }}" title="指标监控">
+                    <svg width="16" height="16"><use href="#i-gauge"/></svg> <span>指标监控</span>
+                    {# 徽标只显示真实条数（近 24h 指标告警）；为 0 时不渲染，避免假数字 #}
+                    {% if nav_badges and nav_badges.indicator %}
+                    <span class="nav-badge num" title="近 24 小时指标告警 {{ nav_badges.indicator }} 条">{{ nav_badges.indicator }}</span>
+                    {% endif %}
+                </a>
+                <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('ai.') }}" href="{{ url_for('ai.page') }}" title="AI 分析">
+                    <svg width="16" height="16"><use href="#i-sparkles"/></svg> <span>AI 分析</span>
+                </a>
+            </nav>
+        </div>
+
+        <div>
+            <div class="nav-group-label"><span>系统</span></div>
+            <nav class="nav">
+                <a class="nav-item {{ 'active' if request.endpoint == 'auth.profile' }}" href="{{ url_for('auth.profile') }}" title="账户设置">
+                    <svg width="16" height="16"><use href="#i-cog"/></svg> <span>账户设置</span>
+                </a>
+                {# 退出登录是 GET 链接，不在侧栏塞表单（与「列表里不塞表单」同一约定） #}
+                <a class="nav-item" href="{{ url_for('auth.logout') }}" title="退出登录">
+                    <svg width="16" height="16"><use href="#i-user"/></svg> <span>退出登录</span>
+                </a>
+            </nav>
+        </div>
+        {% endif %}
+
+        {# 侧栏底部：系统运行状态（实时取自监控服务，非静态文案）。
+           首屏由服务端渲染，之后由 theme.js 每 30s 轮询 /stock/api/system_status 更新 #}
+        <div class="side-foot" data-system-status
+             data-status-url="{{ url_for('stock.api_system_status') }}">
+            <div class="side-foot-row"><span>监控</span>
+                <b class="{{ 'down' if system_status.monitor.running else 'muted' }}"
+                   data-status-monitor title="监控线程运行状态">{{ system_status.monitor.text }}</b></div>
+            <div class="side-foot-row"><span>交易时段</span>
+                <b data-status-session title="A 股常规交易时段">{{ system_status.session.text }}</b></div>
+            <div class="side-foot-row"><span>告警冷却</span>
+                <b class="num" data-status-cooldown title="同一订单同一告警类型的去重间隔">{{ system_status.cooldown.text }}</b></div>
+            <div class="side-foot-row"><span>雪球</span>
+                <b class="{{ 'down' if system_status.xueqiu.ok else 'up' }}"
+                   data-status-xueqiu title="{{ system_status.xueqiu.reason or '行情数据源' }}">{{ system_status.xueqiu.text }}</b></div>
+        </div>
+    </aside>
+
+    <!-- 主区 -->
+    <div class="main">
+        <header class="topbar">
+            <div class="crumb">股池监控台 / <b>{% block crumb %}总览{% endblock %}</b></div>
+            <div class="spacer"></div>
+            {# 监控运行徽标：与侧栏底部同源（system_status），运行中有呼吸点，停止时变灰 #}
+            <span class="pill {{ 'live' if system_status.monitor.running else '' }}" data-monitor-pill
+                  title="监控线程运行状态">
+                <i class="dot"></i> <span data-monitor-text>{{ '监控运行中' if system_status.monitor.running else '监控已停止' }}</span>
+            </span>
+            <button class="icon-btn" type="button" data-theme-toggle title="切换深色 / 浅色">
+                <svg width="16" height="16"><use id="theme-icon" href="#i-moon"/></svg>
+            </button>
+            {% if session.user_id %}
+            <details class="user-menu">
+                <summary class="pill" title="{{ session.get('username') or '' }}">
+                    <span class="avatar">{{ (session.get('username') or '?')[:1] }}</span>
+                    <svg width="14" height="14"><use href="#i-arrow-down"/></svg>
+                </summary>
+                <div class="user-menu-list">
+                    <a href="{{ url_for('auth.profile') }}"><svg width="15" height="15"><use href="#i-user"/></svg> 账户设置</a>
+                    <a href="{{ url_for('auth.logout') }}"><svg width="15" height="15"><use href="#i-arrow-down"/></svg> 退出登录</a>
+                </div>
+            </details>
+            {% endif %}
+        </header>
+
+        <main class="content page">
+            <!-- Flash 消息 -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                <div class="flashes">
+                    {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">
+                        <svg width="16" height="16"><use href="#i-{{ 'alert' if category == 'error' else 'check' if category == 'success' else 'info' }}"/></svg>
+                        <div>{{ message }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+
+<script src="{{ static_url('js/theme.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

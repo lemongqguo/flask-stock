@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>添加 / 编辑订单 · 股池监控台（设计稿）</title>
+<link rel="stylesheet" href="../assets/design.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">股</div>
+      <div><div class="brand-name">股池监控台</div><div class="brand-sub">Stock Monitor</div></div>
+    </div>
+    <div>
+      <div class="nav-group-label">交易</div>
+      <nav class="nav">
+        <a class="nav-item" href="orders.html"><svg width="16" height="16"><use href="#i-list"/></svg><span>订单列表</span></a>
+        <a class="nav-item active" href="order-form.html"><svg width="16" height="16"><use href="#i-plus"/></svg><span>添加订单</span></a>
+        <a class="nav-item" href="alarm-settings.html"><svg width="16" height="16"><use href="#i-bell"/></svg><span>告警设置</span></a>
+        <a class="nav-item" href="alarm-history.html"><svg width="16" height="16"><use href="#i-history"/></svg><span>告警历史</span></a>
+      </nav>
+    </div>
+    <div>
+      <div class="nav-group-label">监控</div>
+      <nav class="nav">
+        <a class="nav-item" href="indicators.html"><svg width="16" height="16"><use href="#i-gauge"/></svg><span>指标监控</span><span class="nav-badge">2</span></a>
+        <a class="nav-item" href="ai.html"><svg width="16" height="16"><use href="#i-sparkles"/></svg><span>AI 分析</span></a>
+      </nav>
+    </div>
+    <div>
+      <div class="nav-group-label">系统</div>
+      <nav class="nav">
+        <a class="nav-item" href="account.html"><svg width="16" height="16"><use href="#i-cog"/></svg><span>账户设置</span></a>
+        <a class="nav-item" href="auth.html"><svg width="16" height="16"><use href="#i-user"/></svg><span>退出登录</span></a>
+      </nav>
+    </div>
+    <div class="side-foot">
+      <div class="side-foot-row"><span>监控</span><b class="down">运行中</b></div>
+      <div class="side-foot-row"><span>交易时段</span><b>午间休市</b></div>
+      <div class="side-foot-row"><span>告警冷却</span><b>4 小时</b></div>
+      <div class="side-foot-row"><span>雪球</span><b class="down">正常</b></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">订单管理 / <b>编辑订单</b></div>
+      <div class="spacer"></div>
+      <span class="pill live"><i class="dot"></i> 监控运行中</span>
+      <button class="icon-btn" id="theme-btn" title="切换深色 / 浅色"><svg width="16" height="16"><use href="#i-moon" id="theme-icon"/></svg></button>
+      <div class="avatar">LE</div>
+    </header>
+
+    <div class="content">
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">编辑订单</h1>
+            <p class="page-desc">同一个模板服务「添加」与「编辑」；编辑态额外展示 K 线图与状态开关</p>
+          </div>
+          <a class="btn btn-ghost" href="orders.html">返回列表</a>
+        </div>
+
+        <div class="form-layout">
+          <div>
+            <!-- 1 -->
+            <div class="card panel">
+              <div class="panel-head">
+                <span class="step-no">1</span>
+                <span class="panel-title">标的信息</span>
+                <span class="panel-hint">* 为必填</span>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>订单名称 <span class="req">*</span></label>
+                  <input class="input" value="贵州茅台" style="font-family:var(--sans)">
+                  <div class="help">用于列表展示，建议填股票简称</div>
+                </div>
+                <div class="field">
+                  <label>订单代码 <span class="req">*</span></label>
+                  <input class="input" value="SH600519">
+                  <div class="help">需带交易所前缀 SH / SZ / BJ，全库唯一</div>
+                </div>
+              </div>
+              <div class="grid-2" style="margin-top:14px">
+                <div class="field"><label>目标市盈率 PE</label><input class="input" placeholder="选填"></div>
+                <div class="field"><label>目标市净率 PB</label><input class="input" placeholder="选填"></div>
+              </div>
+              <div class="grid-2" style="margin-top:14px">
+                <div class="field">
+                  <label>监控状态</label>
+                  <select class="select" style="width:100%;padding:9px 12px">
+                    <option>监控中</option><option>已暂停</option>
+                  </select>
+                  <div class="help">暂停后不再拉取行情，也不参与告警判定</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2 -->
+            <div class="card panel">
+              <div class="panel-head">
+                <span class="step-no">2</span>
+                <span class="panel-title">价格阈值</span>
+                <span class="panel-hint">第一档 &gt; 第二档 &gt; 第三档</span>
+              </div>
+              <div class="grid-2" style="margin-bottom:16px">
+                <div class="field">
+                  <label>目标卖出价</label>
+                  <input class="input" value="1900.00">
+                  <div class="help">现价 1,682.50，还需上涨 <b class="up num">12.9%</b> 触发</div>
+                </div>
+                <div class="field"><label>股息率 %</label><input class="input" placeholder="选填"></div>
+              </div>
+              <div class="ladder" data-current="1682.50">
+                <div class="ladder-row"><div class="ladder-tag">第一档</div><input class="input" value="1600.00" data-ladder><div class="delta">—</div></div>
+                <div class="ladder-row"><div class="ladder-tag">第二档</div><input class="input" value="1450.00" data-ladder><div class="delta">—</div></div>
+                <div class="ladder-row"><div class="ladder-tag">第三档</div><input class="input" value="1300.00" data-ladder><div class="delta">—</div></div>
+              </div>
+            </div>
+
+            <!-- 3 -->
+            <div class="card panel">
+              <div class="panel-head">
+                <span class="step-no">3</span>
+                <span class="panel-title">估值阈值</span>
+                <span class="panel-hint">PE / PB 三档，选填</span>
+              </div>
+              <div style="font-size:12.5px;color:var(--text-2);margin-bottom:8px">PE 阈值</div>
+              <div class="grid-3">
+                <div class="field"><label>第一档</label><input class="input" value="25.00"></div>
+                <div class="field"><label>第二档</label><input class="input" value="20.00"></div>
+                <div class="field"><label>第三档</label><input class="input" value="16.00"></div>
+              </div>
+              <div style="font-size:12.5px;color:var(--text-2);margin:14px 0 8px">PB 阈值</div>
+              <div class="grid-3">
+                <div class="field"><label>第一档</label><input class="input" value="8.00"></div>
+                <div class="field"><label>第二档</label><input class="input" value="6.50"></div>
+                <div class="field"><label>第三档</label><input class="input" value="5.00"></div>
+              </div>
+            </div>
+
+            <!-- 4 -->
+            <div class="card panel">
+              <div class="panel-head"><span class="step-no">4</span><span class="panel-title">备注</span></div>
+              <div class="field"><textarea>第一档试仓 20%，第三档加至满仓</textarea></div>
+            </div>
+
+            <!-- K 线（仅编辑态） -->
+            <div class="card panel">
+              <div class="panel-head">
+                <span class="step-no" style="background:var(--info-soft);color:var(--info)">
+                  <svg width="13" height="13"><use href="#i-chart"/></svg>
+                </span>
+                <span class="panel-title">K 线与均线</span>
+                <span class="panel-hint">保留 Chart.js 4.4.1（已锁版本）</span>
+              </div>
+              <div style="height:220px;border-radius:var(--radius-sm);border:1px dashed var(--border);display:grid;place-items:center;color:var(--muted);font-size:12.5px;background:var(--surface-2)">
+                <div style="text-align:center">
+                  <svg width="26" height="26" style="opacity:.5"><use href="#i-chart"/></svg>
+                  <div style="margin-top:8px">收盘价 / MA5 / MA10 / MA30 折线图</div>
+                  <div style="margin-top:4px">信号：<b class="up">金叉</b>（MA5 上穿 MA10）</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="rail">
+            <div class="card rail-card">
+              <div class="rail-title">实时行情</div>
+              <div class="rail-row"><span>现价</span><b class="num up">1,682.50</b></div>
+              <div class="rail-row"><span>涨跌幅</span><b class="num up">+2.41%</b></div>
+              <div class="rail-row"><span>PE (TTM)</span><b class="num">28.64</b></div>
+              <div class="rail-row"><span>PB</span><b class="num">9.12</b></div>
+              <div class="rail-row"><span>52 周区间</span><b class="num">1,180 – 2,180</b></div>
+              <div class="rail-row"><span>K线信号</span><b class="up">金叉</b></div>
+            </div>
+            <div class="card rail-card">
+              <div class="rail-title">填写提示</div>
+              <ul class="tips">
+                <li>三档阈值应<b>依次递减</b>，跌到哪一档触发哪一档</li>
+                <li>只填第一档也能用，二三档留空即可</li>
+                <li>代码前缀错误会拉取不到行情</li>
+                <li>告警默认冷却 4 小时，避免重复打扰</li>
+              </ul>
+            </div>
+            <div class="card rail-card">
+              <div class="rail-title">操作</div>
+              <div style="display:flex;gap:10px">
+                <button class="btn btn-ghost" style="flex:1">重置</button>
+                <a class="btn btn-primary" href="orders.html" style="flex:1"><svg width="15" height="15"><use href="#i-check"/></svg> 保存</a>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/app.js"></script>
+</body>
+</html>

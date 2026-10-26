@@ -1,0 +1,502 @@
+{% extends "base.html" %}
+
+{% block title %}AI 分析 - 股池监控台{% endblock %}
+{% block crumb %}AI 分析{% endblock %}
+
+{#
+  AI 个股分析工作台（007 AI 个股分析）。
+
+  结构：顶部 `.ai-hero`（居中搜索框定标的 + 状态 chips）→ `.ai-work`（主区「标的条 + 报告」/ 右栏「参数 + 快照 + 历史」）。
+  三条底线：
+  1. 页面**不渲染全量标的列表**：标的由 `?stock_id=`（订单列表行内「AI 分析」按钮）或顶部搜索框确定；
+     搜索框走 `/stock/ai/api/search` **服务端真查库**，不再靠前端过滤已渲染行。
+  2. 未启用 / 未配置时只显示原因，会发请求的入口 disabled，不发请求、不报错。
+  3. 报告必须带免责声明，页面**不出现任何密钥明文**（只有脱敏后的状态）。
+#}
+{% macro tone_of(verdict) -%}
+    {{- 'up' if verdict in ['买入', '增持'] else 'down' if verdict in ['减持', '回避'] else 'flat' -}}
+{%- endmacro %}
+
+{% macro num_or_dash(value, suffix='') -%}
+    {%- if value is none -%}—{%- else -%}{{ "%.2f"|format(value|float) }}{{ suffix }}{%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+
+<!-- ① 顶部：搜索定标的 -->
+<section class="ai-hero">
+    <div class="ai-hero-inner">
+        <span class="ai-hero-badge">
+            <svg width="13" height="13"><use href="#i-sparkles"/></svg> AI 个股分析
+        </span>
+        <h1 class="ai-hero-title">选一只票，让 AI 把数据讲清楚</h1>
+        <p class="ai-hero-sub">
+            基于已采集的行情 / 估值 / 指标数据生成结构化分析，可继续追问
+            · 提示词 {{ prompt_version }}
+            {%- if ai_info.style == 'chat' %} · Chat 兼容模式{% endif %}
+        </p>
+
+        <div class="ai-combo" data-ai-search data-url="{{ url_for('ai.search') }}"
+             data-min="{{ search_min }}">
+            <svg class="ai-combo-icon" width="16" height="16"><use href="#i-search"/></svg>
+            <input class="ai-combo-input" data-ai-input type="search" autocomplete="off"
+                   placeholder="搜索股票名称或代码，如 600519 / 茅台"
+                   aria-label="搜索标的">
+            <button type="button" class="ai-combo-clear" data-ai-clear hidden aria-label="清空搜索">
+                <svg width="12" height="12"><use href="#i-close"/></svg>
+            </button>
+            <div class="ai-combo-menu" data-ai-menu hidden role="listbox"></div>
+        </div>
+
+        <div class="ai-hero-chips">
+            <span class="pill {{ 'live' if ready else 'warn' }}">
+                <span class="dot"></span>{{ '已启用' if ready else '未启用' }}
+            </span>
+            <span class="pill" title="本月调用 / 上限">
+                <svg width="13" height="13"><use href="#i-chart"/></svg>
+                本月 {{ usage.used if usage.used is not none else '—' }} / {{ '不限' if usage.unlimited else usage.limit }}
+                {%- if usage.remaining is not none %} · 剩 {{ usage.remaining }}{% endif %}
+            </span>
+            <span class="pill" title="实际会发出去的模型（AI_MODEL 第一项）">
+                <svg width="13" height="13"><use href="#i-sparkles"/></svg>
+                {{ model or '未配置' }}{% if model_badge %} · {{ model_badge }}{% endif %}
+            </span>
+            <span class="pill" title="密钥只显示脱敏值；可在下方追问框的「密钥」里临时录入（只存本次运行内存，不落库）">
+                <svg width="13" height="13"><use href="#i-lock"/></svg> {{ ai_info.key_masked }}
+                {%- if ai_info.key_source == 'runtime' %} · 本次运行{% endif %}
+            </span>
+        </div>
+
+        <p class="ai-hero-foot">
+            也可以到 <a href="{{ url_for('stock.stock_list') }}">订单列表</a> 点行内的「AI 分析」直接带入标的。
+        </p>
+    </div>
+</section>
+
+{% if not ready %}
+<div class="hint-inline warn" style="margin:0 0 16px">
+    <svg width="15" height="15"><use href="#i-lock"/></svg>
+    <div>
+        <b>{{ ready_reason }}</b><br>
+        需在环境变量中配置 <code>AI_API_BASE</code>、<code>AI_MODEL</code>、<code>AI_API_KEY</code>
+        并置 <code>AI_ENABLED=1</code> 后才能发起调用；也可以直接在下方追问框点「密钥」录入，
+        <b>录入即生效</b>（只存本次运行内存，重启后失效，长期仍建议写进 <code>.env</code>）。
+        密钥<b>不入库、不回显、不写日志</b>，本页仅显示脱敏状态（{{ ai_info.key_masked }}）。
+    </div>
+</div>
+{% endif %}
+
+{% if stock_total == 0 %}
+<div class="card">
+    <div class="empty-row" style="padding:48px 0">暂无监控标的，请先去「添加订单」录入一只股票</div>
+</div>
+{% else %}
+
+<!-- ② 工作台 -->
+<div class="ai-work">
+
+    <div class="ai-main">
+        {% if stock %}
+        {# 标的条：选定的那一只 + 关键指标 + 动作 #}
+        {% set snap = snapshot or {} %}
+        <div class="card ai-target">
+            <span class="ai-target-id">{{ (stock.stock_name or '?')[:1] }}</span>
+            <div class="ai-target-head">
+                <div class="ai-target-name">{{ stock.stock_name }}</div>
+                <div class="ai-target-meta">
+                    <span class="ai-target-code">{{ stock.stock_code }}</span>
+                    <span>数据日期 {{ snap.get('trade_date') or '—' }}</span>
+                </div>
+            </div>
+            <div class="ai-target-price">
+                <div class="k">最新价</div>
+                <div class="v">{{ num_or_dash(price) }}</div>
+            </div>
+            <div class="ai-stats">
+                <div class="ai-stat"><span>距 52 周低</span>
+                    <b class="num {{ 'down' if snap.get('pct_from_low52w') is not none and snap.get('pct_from_low52w')|float < 0 }}">
+                        {{ num_or_dash(snap.get('pct_from_low52w'), '%') }}</b></div>
+                <div class="ai-stat"><span>52 周回撤</span>
+                    <b class="num {{ 'down' if snap.get('drawdown_52w') is not none and snap.get('drawdown_52w')|float < 0 }}">
+                        {{ num_or_dash(snap.get('drawdown_52w'), '%') }}</b></div>
+                <div class="ai-stat"><span>20 日相对</span>
+                    <b class="num {{ 'down' if snap.get('rs_20d') is not none and snap.get('rs_20d')|float < 0 }}">
+                        {{ num_or_dash(snap.get('rs_20d'), '%') }}</b></div>
+                <div class="ai-stat"><span>5 日相对</span>
+                    <b class="num">{{ num_or_dash(snap.get('rs_5d_ratio'), '×') }}</b></div>
+                <div class="ai-stat"><span>K 线信号</span>
+                    <b class="{{ signal_tone }}">{{ signal_text }}</b></div>
+            </div>
+            <div class="ai-actions">
+                <button type="submit" form="ai-params" formaction="{{ url_for('ai.analyze') }}"
+                        class="btn btn-primary" {{ 'disabled' if not ready }}
+                        title="{{ ready_reason or '用当前参数生成一次分析' }}">
+                    <svg width="15" height="15"><use href="#i-sparkles"/></svg> 生成分析
+                </button>
+                <button type="submit" form="ai-params" formaction="{{ url_for('ai.save_config') }}"
+                        class="btn btn-ghost">
+                    <svg width="15" height="15"><use href="#i-check"/></svg> 保存参数
+                </button>
+                <button type="button" class="btn btn-ghost" data-ai-focus title="回到顶部搜索框换一只">
+                    <svg width="15" height="15"><use href="#i-search"/></svg> 换个标的
+                </button>
+            </div>
+        </div>
+
+        {% if latest %}
+        {# 报告 #}
+        <div class="card">
+            <div class="report-head">
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:16px;font-weight:700">
+                        分析报告
+                        <span class="muted" style="font-size:12.5px;font-weight:400">
+                            · {{ latest.created_at }} · {{ latest.model or '—' }}
+                            · {{ latest.prompt_version or '—' }} · {{ latest.tokens_used or 0 }} tokens
+                        </span>
+                    </div>
+                    <div class="muted" style="font-size:12px;margin-top:4px">
+                        {{ stock.stock_name }} {{ stock.stock_code }}
+                    </div>
+                </div>
+                {% if latest.verdict != qa_verdict %}
+                <div class="verdict">
+                    <div class="v {{ tone_of(latest.verdict) }}">{{ latest.verdict or '未知' }}</div>
+                    <div class="k">综合评级</div>
+                </div>
+                {% if latest.confidence is not none %}
+                {% set conf = latest.confidence|float %}
+                <div class="confidence">
+                    <div style="font-size:12px;color:var(--muted)">置信度 <b class="num">{{ "%.0f"|format(conf) }}%</b></div>
+                    <div class="bar"><i style="width:{{ "%.0f"|format(conf) }}%"></i></div>
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="verdict">
+                    <div class="v" style="font-size:16px">问答</div>
+                    <div class="k">追问记录</div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if latest.verdict == qa_verdict %}
+            <div class="report-body">
+                <div class="ai-qa">
+                    <div class="ai-qa-q"><span class="muted">问</span>{{ latest.content.question }}</div>
+                    <div class="ai-qa-a">{{ latest.content.answer }}</div>
+                </div>
+            </div>
+            {% else %}
+            {% if latest.content.dimensions %}
+            <div style="padding:16px 20px 0">
+                <div class="section-title">分析维度</div>
+                <div class="dim-grid">
+                    {% for label in latest.content.dimensions %}
+                    <div class="dim on"><svg width="15" height="15"><use href="#i-check"/></svg> {{ label }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="report-body">
+                <div class="section-title">核心结论</div>
+                <p>{{ latest.content.summary or '—' }}</p>
+
+                {% if latest.content.points %}
+                <div class="section-title">关键要点</div>
+                <ul class="point-list">
+                    {% for point in latest.content.points %}
+                    <li><span class="idx">{{ loop.index }}</span><div>{{ point }}</div></li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+
+                <div class="section-title">支撑与风险</div>
+                <div class="pc-grid">
+                    <div class="pc pros">
+                        <h5><svg width="14" height="14"><use href="#i-arrow-up"/></svg> 支撑因素</h5>
+                        {% if latest.content.supports %}
+                        <ul>{% for item in latest.content.supports %}<li>{{ item }}</li>{% endfor %}</ul>
+                        {% else %}<div class="muted">—</div>{% endif %}
+                    </div>
+                    <div class="pc cons">
+                        <h5><svg width="14" height="14"><use href="#i-arrow-down"/></svg> 风险因素</h5>
+                        {% if latest.content.risks %}
+                        <ul>{% for item in latest.content.risks %}<li>{{ item }}</li>{% endfor %}</ul>
+                        {% else %}<div class="muted">—</div>{% endif %}
+                    </div>
+                </div>
+
+                {% if latest.content.parsed is sameas false %}
+                <div class="hint-inline warn" style="margin:16px 0 0">
+                    <svg width="15" height="15"><use href="#i-info"/></svg>
+                    <div>模型未按约定 JSON 返回，以上为原文摘要；要点 / 支撑 / 风险无法结构化展示。</div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="disclaimer">
+                <b>免责声明：</b>{{ latest.content.disclaimer or '本报告由 AI 基于公开行情数据生成，不构成投资建议。' }}
+                数据可能存在延迟或错误，请自行核实后决策，盈亏自负。
+            </div>
+        </div>
+        {% else %}
+        {# 已选标的但没有报告 #}
+        <div class="card">
+            <div class="ai-empty" style="padding:56px 20px">
+                <span class="ai-tool-icon" style="margin:0 auto 12px">
+                    <svg width="17" height="17"><use href="#i-sparkles"/></svg>
+                </span>
+                <h3>{{ stock.stock_name }} 还没有分析报告</h3>
+                <p>右侧选好模型与分析维度后，点上方「生成分析」开始。</p>
+            </div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        {# 未选标的：能力卡片网格 + 最近分析 #}
+        <div class="card">
+            <div class="ai-empty">
+                <h3>先选一只标的</h3>
+                <p>
+                    在顶部搜索框输入<b>名称或代码</b>，或到
+                    <a href="{{ url_for('stock.stock_list') }}" style="color:var(--accent);font-weight:600">订单列表</a>
+                    点行内的「AI 分析」直接带入。
+                </p>
+            </div>
+            <div class="ai-catalog">
+                {% for card in dim_cards %}
+                <div class="ai-tool">
+                    <span class="ai-tool-icon"><svg width="17" height="17"><use href="#{{ card.icon }}"/></svg></span>
+                    <div class="ai-tool-name">{{ card.label }}</div>
+                    <div class="ai-tool-desc">{{ card.desc }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% if recent %}
+            <div class="ai-recent">
+                <div class="ai-recent-title">最近分析</div>
+                {% for row in recent %}
+                <a class="ai-recent-item"
+                   href="{{ url_for('ai.page', stock_id=row.stock_master_id, report_id=row.id) }}">
+                    <span class="ai-recent-name">{{ row.stock_name }}</span>
+                    <span class="ai-recent-code num">{{ row.stock_code }}</span>
+                    <span class="ai-verdict {{ tone_of(row.verdict) }}">{{ row.verdict or '未知' }}</span>
+                    <span class="ai-recent-time">{{ row.created_at }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# Composer：输入 + 底部工具条（模型 / 密钥 + 连通测试）+ 圆形发送。
+           放在标的/报告分支之外：**密钥入口必须随时可达**（没密钥时正需要它录入），
+           但「发送」只在"已就绪 + 有上一轮分析"时才可用，避免点了必然失败。 #}
+        {% set can_ask = ready and latest %}
+        <form class="ask-box" method="POST" action="{{ url_for('ai.ask') }}" data-submit-once>
+            <input type="hidden" name="stock_id" value="{{ stock_id or '' }}">
+            <textarea class="ask-input" name="question" rows="1" maxlength="{{ question_max }}"
+                      placeholder="给 {{ model or 'AI' }} 发送消息"
+                      aria-label="追问内容"
+                      {{ 'disabled' if not can_ask }}></textarea>
+
+            <div class="ask-tools">
+                <div class="ask-pills">
+                    {% if models %}
+                    <label class="ask-pill" title="本次追问使用的模型（真实下发并记录到历史）">
+                        <svg width="13" height="13"><use href="#i-sparkles"/></svg>
+                        <select class="ask-select" name="model" aria-label="模型">
+                            {% for name in models %}
+                            <option value="{{ name }}" {{ 'selected' if name == model }}>{{ name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    {% else %}
+                    <span class="ask-pill is-static" title="未配置 AI_MODEL">
+                        <svg width="13" height="13"><use href="#i-sparkles"/></svg> 未配置模型
+                    </span>
+                    {% endif %}
+
+                    {# 密钥与测试合并成一个入口：点它展开密钥面板，面板里粘贴 Key 后用同一个
+                       `/stock/ai/test` 真实发起请求（右栏参数卡不再重复放连通测试按钮） #}
+                    <button type="button" class="ask-pill {{ 'on' if ai_info.key_source == 'runtime' }}"
+                            data-ask-key aria-expanded="false"
+                            title="展开密钥输入并测试连通性（会发一次真实请求，消耗少量 Token）">
+                        <svg width="13" height="13"><use href="#i-refresh"/></svg>
+                        测试连通性
+                    </button>
+                </div>
+
+                <button type="submit" class="ask-send" data-keep-content
+                        {{ 'disabled' if not can_ask }}
+                        aria-label="发送追问"
+                        title="{{ ready_reason or ('先生成一次分析再追问' if not latest else '基于最近一次分析继续提问（Enter 发送）') }}">
+                    <svg width="16" height="16"><use href="#i-arrow-up"/></svg>
+                </button>
+            </div>
+
+            <div class="ask-key" data-ask-key-panel hidden>
+                <span class="ask-key-now">当前密钥 {{ ai_info.key_masked }}
+                    {%- if ai_info.key_source == 'runtime' %} · 本次运行录入（重启失效）{% endif %}</span>
+                <input class="input" type="password" name="api_key" autocomplete="off"
+                       placeholder="粘贴 API Key：只存本次运行内存，不落库、不回显">
+                <button type="submit" formaction="{{ url_for('ai.test') }}"
+                        class="btn btn-ghost btn-sm" title="会发一次真实请求，消耗少量 Token">
+                    <svg width="13" height="13"><use href="#i-refresh"/></svg> 用这个密钥测一下
+                </button>
+                <button type="submit" formaction="{{ url_for('ai.test') }}" name="clear_key" value="1"
+                        class="btn btn-ghost btn-sm" title="清除本次运行录入的密钥，改用环境变量">
+                    用回环境变量
+                </button>
+            </div>
+
+            <div class="ask-hint">
+                Enter 发送 · Shift+Enter 换行 · 最多 {{ question_max }} 字
+                {%- if not latest %} · 生成一次分析后即可追问{% endif %}
+                {%- if ai_info.key_source == 'runtime' %} · 密钥来自本次运行录入（重启失效）{% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- 右栏：参数 + 快照 + 历史 -->
+    <div class="rail">
+        <form class="card rail-card" id="ai-params" method="POST" action="{{ url_for('ai.save_config') }}">
+            <div class="rail-title">分析参数</div>
+            <input type="hidden" name="stock_id" value="{{ stock_id or '' }}">
+
+            <div class="field" style="margin-bottom:12px">
+                <label for="ai-model">模型</label>
+                {% if models %}
+                {# 候选来自 AI_MODEL / AI_MODELS（都按逗号拆分），选中态跟"实际会发出去的那个"一致 #}
+                <select class="select" id="ai-model" name="model" style="width:100%">
+                    {% for name in models %}
+                    <option value="{{ name }}" {{ 'selected' if name == model }}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+                {% if model_stale %}
+                <div class="muted" style="font-size:11.5px;margin-top:6px">
+                    参数里保存的「{{ config.model }}」不在候选清单内，已回退到默认模型。
+                </div>
+                {% endif %}
+                {% else %}
+                <select class="select" id="ai-model" style="width:100%" disabled>
+                    <option>未配置 AI_MODEL</option>
+                </select>
+                {% endif %}
+            </div>
+
+            <div class="field" style="margin-bottom:12px">
+                <label>分析维度</label>
+                <div class="dim-grid" style="grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px">
+                    {% for key, label in dims.items() %}
+                    <label class="dim {{ 'on' if key in config.dimension_keys }}" style="padding:8px 10px">
+                        <input type="checkbox" name="dimensions" value="{{ key }}"
+                               {{ 'checked' if key in config.dimension_keys }}
+                               style="accent-color:var(--violet);margin:0">
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="grid-2" style="gap:10px">
+                <div class="field">
+                    <label for="temperature">温度</label>
+                    <input class="input" id="temperature" name="temperature" type="number"
+                           step="0.1" min="0" max="2" value="{{ config.temperature }}">
+                </div>
+                <div class="field">
+                    <label for="max_tokens">最大 Token</label>
+                    <input class="input" id="max_tokens" name="max_tokens" type="number"
+                           step="1" min="100" max="32000" value="{{ config.max_tokens }}">
+                </div>
+            </div>
+
+            <div class="field" style="margin-top:12px">
+                <label for="monthly_limit">月度调用上限（0 = 不限）</label>
+                <input class="input" id="monthly_limit" name="monthly_limit" type="number"
+                       step="1" min="0" max="100000" value="{{ config.monthly_limit }}">
+            </div>
+
+            <div class="field" style="margin-top:12px">
+                <label>引用数据范围</label>
+                <div class="ai-checks">
+                    {% for key, label in scopes.items() %}
+                    <label class="ai-check">
+                        <input type="checkbox" name="data_scope" value="{{ key }}"
+                               {{ 'checked' if key in config.scope }}>
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <label class="ai-check" style="margin-top:14px">
+                <input type="checkbox" name="enabled" value="1" {{ 'checked' if config.enabled }}>
+                <span>启用（<code>AI_ENABLED</code> 是总闸，此处只能在其之下关闭）</span>
+            </label>
+
+            {# 连通测试按钮已从参数卡移除：它和密钥录入合并进底部 Composer 的
+               「测试连通性」pill，两处都放会让人不知道该点哪个 #}
+            <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center">
+                <button type="submit" formaction="{{ url_for('ai.save_config') }}" class="btn btn-ghost btn-sm">
+                    <svg width="13" height="13"><use href="#i-check"/></svg> 保存参数
+                </button>
+                <span class="muted" style="font-size:11.5px">密钥 {{ ai_info.key_masked }} · 测试在底部对话框</span>
+            </div>
+        </form>
+
+        {% if stock %}
+        <div class="card rail-card">
+            <div class="rail-title">指标快照</div>
+            {% if snapshot %}
+            {# 快照是游标行字典：统一 .get() 取值，列缺失时按「—」渲染而不是整页 500 #}
+            <div class="rail-row"><span>现价</span><b class="num">{{ num_or_dash(price) }}</b></div>
+            <div class="rail-row"><span>距 52 周低</span>
+                <b class="num {{ 'down' if snapshot.get('pct_from_low52w') is not none and snapshot.get('pct_from_low52w')|float < 0 }}">
+                    {{ num_or_dash(snapshot.get('pct_from_low52w'), '%') }}</b></div>
+            <div class="rail-row"><span>52 周回撤</span>
+                <b class="num {{ 'down' if snapshot.get('drawdown_52w') is not none and snapshot.get('drawdown_52w')|float < 0 }}">
+                    {{ num_or_dash(snapshot.get('drawdown_52w'), '%') }}</b></div>
+            <div class="rail-row"><span>20 日相对</span>
+                <b class="num {{ 'down' if snapshot.get('rs_20d') is not none and snapshot.get('rs_20d')|float < 0 }}">
+                    {{ num_or_dash(snapshot.get('rs_20d'), '%') }}</b></div>
+            <div class="rail-row"><span>5 日相对</span>
+                <b class="num">{{ num_or_dash(snapshot.get('rs_5d_ratio'), '×') }}</b></div>
+            <div class="rail-row"><span>K 线信号</span><b class="{{ signal_tone }}">{{ signal_text }}</b></div>
+            <div class="rail-row"><span>数据日期</span><b class="num">{{ snapshot.get('trade_date') or '—' }}</b></div>
+            {% else %}
+            <div class="muted" style="font-size:12.5px;line-height:1.7">
+                该标的尚未采集指标快照，<b>52 周区间 / 相对强弱不参与判定</b>；生成分析时模型会看到「数据不足」。
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="card rail-card">
+            <div class="rail-title">历史分析</div>
+            {% if reports %}
+            {% for row in reports %}
+            <a class="hist-item {{ 'on' if latest and row.id == latest.id }}"
+               href="{{ url_for('ai.page', stock_id=stock_id, report_id=row.id) }}">
+                <span class="cell-avatar">{{ 'A' if row.verdict != qa_verdict else 'Q' }}</span>
+                <span style="flex:1;min-width:0">
+                    <div class="t">{{ row.verdict or '未知' }}
+                        {% if row.verdict != qa_verdict and row.confidence is not none %}
+                        · {{ "%.0f"|format(row.confidence|float) }}%
+                        {% endif %}
+                    </div>
+                    <div class="m">{{ row.created_at }} · {{ row.tokens_used or 0 }} tokens</div>
+                </span>
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="muted" style="font-size:12.5px">还没有记录</div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ '注册' if active_tab == 'register' else '登录' }} - 股池监控台</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link href="{{ static_url('css/theme.css') }}" rel="stylesheet">
+    <script>
+      try {
+        var t = localStorage.getItem('stock-ui-theme');
+        document.documentElement.dataset.theme = (t === 'light') ? 'light' : 'dark';
+      } catch (e) { /* 保持默认深色 */ }
+    </script>
+</head>
+<body>
+<div class="auth-shell">
+    <!-- 左：品牌侧 -->
+    <div class="auth-side">
+        <div>
+            <a class="brand" href="{{ url_for('auth.login') }}">
+                <span class="brand-mark">股</span>
+                <span>
+                    <div class="brand-name">股池监控台</div>
+                    <div class="brand-sub">Stock Monitor</div>
+                </span>
+            </a>
+            <div class="auth-quote" style="margin-top:48px">
+                把每一个<br>建仓与卖出的决定，<br><em>交给纪律而非情绪。</em>
+            </div>
+            <div class="auth-sub">
+                价格三档阶梯 · PE / PB 估值锚 · 均线金叉死叉 · 邮件即时提醒。
+                全部数据自动轮询采集，告警历史可回溯。
+            </div>
+            <div class="auth-metrics">
+                <div class="auth-metric"><div class="v num">4</div><div class="k">告警类型</div></div>
+                <div class="auth-metric"><div class="v num">3</div><div class="k">估值档位</div></div>
+                <div class="auth-metric"><div class="v num">24h</div><div class="k">全天监控</div></div>
+            </div>
+        </div>
+        <div class="auth-sub" style="margin:0">© 2026 股池监控台 · 本系统不构成投资建议</div>
+    </div>
+
+    <!-- 右：表单 -->
+    <div class="auth-form-side">
+        <div class="auth-card card">
+            <div class="auth-brand-row">
+                <span class="avatar">{{ '账' }}</span>
+                <div>
+                    <div class="brand-name" style="font-size:14px">账号中心</div>
+                    <div class="cell-code">监控台访问凭证</div>
+                </div>
+                <button class="icon-btn auth-theme-btn" type="button" data-theme-toggle title="切换深色 / 浅色">
+                    <svg width="16" height="16"><use id="theme-icon" href="#i-moon"/></svg>
+                </button>
+            </div>
+
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab {{ 'on' if active_tab != 'register' }}" data-auth-tab="login">登 录</button>
+                <button type="button" class="auth-tab {{ 'on' if active_tab == 'register' }}" data-auth-tab="register">注 册</button>
+            </div>
+
+            <!-- Flash -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                <div class="flashes" style="margin-bottom:14px">
+                    {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">
+                        <svg width="16" height="16"><use href="#i-{{ 'alert' if category == 'error' else 'check' if category == 'success' else 'info' }}"/></svg>
+                        <div>{{ message }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            {% endwith %}
+
+            <!-- 登录 -->
+            <form method="POST" action="{{ url_for('auth.login') }}" data-auth-panel="login"
+                  class="{{ 'hidden' if active_tab == 'register' }}" data-submit-once>
+                <div class="auth-title">欢迎回来</div>
+                <div class="auth-desc">输入用户名与密码进入监控台</div>
+                <div class="field" style="margin-bottom:14px">
+                    <label>用户名 <span class="req">*</span></label>
+                    <input class="input" type="text" name="username" required autofocus placeholder="用户名">
+                </div>
+                <div class="field" style="margin-bottom:20px">
+                    <label>密码 <span class="req">*</span></label>
+                    <input class="input" type="password" name="password" required placeholder="密码">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    <svg width="14" height="14"><use href="#i-check"/></svg> 登录
+                </button>
+            </form>
+
+            <!-- 注册 -->
+            <form method="POST" action="{{ url_for('auth.register') }}" data-auth-panel="register"
+                  class="{{ 'hidden' if active_tab != 'register' }}" data-submit-once>
+                <div class="auth-title">创建账号</div>
+                <div class="auth-desc">注册后即可添加监控标的</div>
+                <div class="field" style="margin-bottom:14px">
+                    <label>用户名 <span class="req">*</span></label>
+                    <input class="input" type="text" name="username" required placeholder="用户名">
+                </div>
+                <div class="field" style="margin-bottom:14px">
+                    <label>密码 <span class="req">*</span></label>
+                    <input class="input" type="password" name="password" required placeholder="至少 6 位">
+                </div>
+                <div class="field" style="margin-bottom:20px">
+                    <label>邮箱（可选）</label>
+                    <input class="input" type="email" name="email" placeholder="用于接收告警邮件">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    <svg width="14" height="14"><use href="#i-plus"/></svg> 注册
+                </button>
+            </form>
+
+            <div class="auth-foot">
+                已有账号？
+                <a href="{{ url_for('auth.login') }}" data-auth-link="login">立即登录</a>
+                 ·
+                还没有账号？
+                <a href="{{ url_for('auth.register') }}" data-auth-link="register">立即注册</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ static_url('js/theme.js') }}"></script>
+</body>
+</html>

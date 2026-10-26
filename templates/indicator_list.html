@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}指标监控 - 股池监控台{% endblock %}
+{% block crumb %}指标监控{% endblock %}
+
+{#
+  指标监控总览（006 指标监控）。
+
+  只展示每个标的**最新一条**快照，不触发任何行情请求；缺数据的列渲染为「—」而不是 0%，
+  否则「没采到」看起来和「很健康」一模一样。
+#}
+{% macro pct(v, digits=2) -%}
+    {%- if v is none -%}<span class="muted">—</span>
+    {%- else -%}<span class="num">{{ "%.*f"|format(digits, v|float) }}%</span>
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro price(v) -%}
+    {%- if v is none -%}<span class="muted">—</span>
+    {%- else -%}<span class="num">{{ "%.2f"|format(v|float) }}</span>
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro combo_cell(ind, combo) -%}
+    {%- if ind is none -%}
+        <span class="type-badge">未采集</span>
+    {%- elif combo -%}
+        <span class="type-badge indicator">满足，已告警</span>
+    {%- else -%}
+        <span class="type-badge">未满足</span>
+    {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="page-title">指标监控</h1>
+        <p class="page-desc">52 周新低 + 52 周回撤 + 20 日跑输 + 5 日倍数<b>四项同时满足</b>才产生告警 · 基准 {{ bench_code }} · 组合冷却 {{ cooldown_hours }} 小时</p>
+    </div>
+</div>
+
+{% if not ind_enabled %}
+<div class="hint-inline warn" style="margin:0 0 16px">
+    <svg width="15" height="15"><use href="#i-info"/></svg>
+    <div>指标监控已被全局开关关闭（<code>IND_ENABLED=0</code>），监控不再采集与告警，下表为历史快照。</div>
+</div>
+{% endif %}
+
+<div class="kpi-grid">
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-list"/></svg> 监控标的</div>
+        <div class="kpi-value num">{{ summary.total }}</div>
+        <div class="kpi-foot">全量标的，本页已采集 {{ summary.collected }} 只</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-alert"/></svg> 组合命中</div>
+        <div class="kpi-value num {{ 'up' if summary.combo_hits else 'down' }}">{{ summary.combo_hits }}</div>
+        <div class="kpi-foot">本页四项同时满足，已发告警</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-chart"/></svg> 未采集</div>
+        <div class="kpi-value num">{{ rows|length - summary.collected }}</div>
+        <div class="kpi-foot">本页尚无快照，无法判定</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-history"/></svg> 最新快照</div>
+        <div class="kpi-value num" style="font-size:20px">{{ summary.latest_date or '—' }}</div>
+        <div class="kpi-foot">每轮行情更新后落库</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="toolbar" style="border-bottom:1px solid var(--border-soft);margin-bottom:0">
+        <span class="result-count">共 {{ total_count }} 只标的</span>
+        <span class="spacer"></span>
+        <select class="select" data-perpage>
+            <option value="{{ url_for('stock.indicator_list', page=page, per_page=5) }}" {% if per_page == 5 %}selected{% endif %}>每页 5 条</option>
+            <option value="{{ url_for('stock.indicator_list', page=page, per_page=10) }}" {% if per_page == 10 %}selected{% endif %}>每页 10 条</option>
+            <option value="{{ url_for('stock.indicator_list', page=page, per_page=20) }}" {% if per_page == 20 %}selected{% endif %}>每页 20 条</option>
+            <option value="{{ url_for('stock.indicator_list', page=page, per_page=50) }}" {% if per_page == 50 %}selected{% endif %}>每页 50 条</option>
+        </select>
+        <a class="btn btn-sm" href="{{ url_for('stock.alarm_settings') }}" title="到告警设置按标的调整指标阈值">
+            <svg width="13" height="13"><use href="#i-cog"/></svg> 调整阈值
+        </a>
+    </div>
+
+    {% if not rows %}
+    <div class="empty-row" style="padding:48px 20px">暂无监控标的，请先添加订单</div>
+    {% else %}
+    <div class="table-wrap">
+        {# 七列全定宽（合计 1160 = .table-indicator 的 min-width）：
+           宽度不够就横向滚动（.table-wrap overflow-x:auto），绝不反向压列宽 #}
+        <table class="table-indicator">
+            <colgroup>
+                <col style="width:300px">
+                <col style="width:110px">
+                <col style="width:180px">
+                <col style="width:120px">
+                <col style="width:140px">
+                <col style="width:200px">
+                <col style="width:110px">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>标的</th>
+                    <th class="right">现价</th>
+                    <th>52 周区间</th>
+                    <th class="right">52 周回撤</th>
+                    <th class="right">5 日 / 20 日</th>
+                    <th>组合信号</th>
+                    <th>更新于</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}
+            {% set stock = row.stock %}
+            {% set ind = row.indicator %}
+                <tr>
+                    <td>
+                        {# 标的列吸收剩余宽度：名称靠左，右端放「AI 分析」快捷入口（与订单列表同款） #}
+                        <div class="cell-with-action">
+                            <div class="cell-primary">
+                                <span class="cell-avatar">{{ (stock.stock_name or '?')[:1] }}</span>
+                                <span>
+                                    <div class="cell-name">{{ stock.stock_name }}</div>
+                                    <div class="cell-code num">{{ stock.stock_code }}</div>
+                                </span>
+                            </div>
+                            <a class="btn btn-ghost btn-sm row-ai blue"
+                               href="{{ url_for('ai.page', stock_id=stock.id) }}"
+                               title="跳转到 {{ stock.stock_name }} 的 AI 分析">
+                                <svg width="13" height="13"><use href="#i-sparkles"/></svg> AI 分析
+                            </a>
+                        </div>
+                    </td>
+                    <td class="right">{{ price(ind.price) if ind else price(None) }}</td>
+                    <td>
+                        {% if ind is none or ind.low52w is none or ind.high52w is none %}
+                        <span class="muted">未采集</span>
+                        {% else %}
+                        <div class="ind-range">
+                            <div class="range52-track">
+                                <span class="range52-dot" style="left:{{ row.range_pos or 0 }}%"></span>
+                            </div>
+                            <div class="range52-legend num">
+                                <span>{{ "%.2f"|format(ind.low52w|float) }}</span>
+                                <span>{{ "%.2f"|format(ind.high52w|float) }}</span>
+                            </div>
+                            <div class="ind-range-foot">距 52 周低 {{ pct(ind.pct_from_low52w) }}</div>
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="right">{{ pct(ind.drawdown_52w) if ind else pct(None) }}</td>
+                    <td class="right">
+                        {% if ind is none %}
+                        <span class="muted">未采集</span>
+                        {% else %}
+                        <div>{{ pct(ind.ret_5d) }}</div>
+                        <div class="muted">{{ pct(ind.ret_20d) }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {{ combo_cell(ind, row.combo) }}
+                        {% if ind %}
+                        <div class="muted" style="margin-top:5px">
+                            相对强弱 {{ pct(ind.rs_20d) }}
+                            · 倍数 {% if ind.rs_5d_ratio is none %}—{% else %}{{ "%.2f"|format(ind.rs_5d_ratio|float) }} 倍{% endif %}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="num">{{ row.trade_date_text or '—' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {# 分页（与订单列表同款）：只有多于一页才出现 #}
+    {% if total_pages > 1 %}
+    <div class="pager">
+        <div class="pager-info">
+            显示第 {{ (page-1)*per_page+1 }} 到 {{ [(page*per_page), total_count]|sort|first }} 条，共 {{ total_count }} 条 / {{ total_pages }} 页
+        </div>
+        <div class="pager-nav">
+            <a class="pg {{ 'off' if page == 1 }}" href="{{ url_for('stock.indicator_list', page=1, per_page=per_page) }}" title="首页">&laquo;</a>
+            <a class="pg {{ 'off' if page == 1 }}" href="{{ url_for('stock.indicator_list', page=page-1, per_page=per_page) }}" title="上一页">&lsaquo;</a>
+            {% set start_page = page-2 if page-2 > 1 else 1 %}
+            {% set end_page = page+2 if page+2 < total_pages else total_pages %}
+            {% for p in range(start_page, end_page+1) %}
+            <a class="pg {{ 'on' if p == page }}" href="{{ url_for('stock.indicator_list', page=p, per_page=per_page) }}">{{ p }}</a>
+            {% endfor %}
+            <a class="pg {{ 'off' if page == total_pages }}" href="{{ url_for('stock.indicator_list', page=page+1, per_page=per_page) }}" title="下一页">&rsaquo;</a>
+            <a class="pg {{ 'off' if page == total_pages }}" href="{{ url_for('stock.indicator_list', page=total_pages, per_page=per_page) }}" title="尾页">&raquo;</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card" style="padding:18px 20px">
+    <div class="section-title">判定规则</div>
+    <div class="rule-grid">
+        <div class="rule">
+            <div class="rule-top"><span class="rule-name">52 周新低</span><span class="rule-type">长期</span></div>
+            <div class="rule-body">距 52 周最低 ≤ {{ global_thresholds.low52w_near_pct }}%</div>
+        </div>
+        <div class="rule">
+            <div class="rule-top"><span class="rule-name">52 周回撤</span><span class="rule-type">长期</span></div>
+            <div class="rule-body">回撤达到 {{ global_thresholds.drawdown_52w_pct }}%</div>
+        </div>
+        <div class="rule">
+            <div class="rule-top"><span class="rule-name">20 日跑输</span><span class="rule-type">短期</span></div>
+            <div class="rule-body">跑输基准 {{ global_thresholds.rs20_pct }} 个百分点</div>
+        </div>
+        <div class="rule">
+            <div class="rule-top"><span class="rule-name">5 日倍数</span><span class="rule-type">短期</span></div>
+            <div class="rule-body">跌幅达基准 {{ global_thresholds.rs5_ratio }} 倍<br>
+                <span class="muted">护栏：个股 ≥ {{ global_thresholds.rs5_min_drop_pct }}%、基准 ≥ {{ global_thresholds.rs5_min_bench_drop_pct }}%</span></div>
+        </div>
+    </div>
+    <div class="hint-inline" style="margin:14px 0 0">
+        <svg width="15" height="15"><use href="#i-info"/></svg>
+        <div>
+            <b>上面四条必须同时成立（AND）才产生一次告警</b>，命中后写一条「组合信号」告警并邮件通知，{{ cooldown_hours }} 小时内不重复。
+            单条命中的标的太多（尤其 52 周回撤是长期持续状态），不作为告警依据。<br>
+            52 周高低取自行情源原始字段，不自行计算窗口；
+            <b>上市不足 20 个交易日或基准未采集到的指标显示为「—」，不参与判定</b>（宁可不报，不可误报）。
+            阈值可到「告警设置 → 指标告警」按标的覆盖，留空继承上面这些全局值。
+        </div>
+    </div>
+</div>
+{% endblock %}

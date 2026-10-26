@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 分析 · 股池监控台（设计稿）</title>
+<link rel="stylesheet" href="../assets/design.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">股</div>
+      <div><div class="brand-name">股池监控台</div><div class="brand-sub">Stock Monitor</div></div>
+    </div>
+    <div>
+      <div class="nav-group-label">交易</div>
+      <nav class="nav">
+        <a class="nav-item" href="orders.html"><svg width="16" height="16"><use href="#i-list"/></svg><span>订单列表</span></a>
+        <a class="nav-item" href="order-form.html"><svg width="16" height="16"><use href="#i-plus"/></svg><span>添加订单</span></a>
+        <a class="nav-item" href="alarm-settings.html"><svg width="16" height="16"><use href="#i-bell"/></svg><span>告警设置</span></a>
+        <a class="nav-item" href="alarm-history.html"><svg width="16" height="16"><use href="#i-history"/></svg><span>告警历史</span></a>
+      </nav>
+    </div>
+    <div>
+      <div class="nav-group-label">监控</div>
+      <nav class="nav">
+        <a class="nav-item" href="indicators.html"><svg width="16" height="16"><use href="#i-gauge"/></svg><span>指标监控</span><span class="nav-badge">2</span></a>
+        <a class="nav-item active" href="ai.html"><svg width="16" height="16"><use href="#i-sparkles"/></svg><span>AI 分析</span></a>
+      </nav>
+    </div>
+    <div>
+      <div class="nav-group-label">系统</div>
+      <nav class="nav">
+        <a class="nav-item" href="account.html"><svg width="16" height="16"><use href="#i-cog"/></svg><span>账户设置</span></a>
+        <a class="nav-item" href="auth.html"><svg width="16" height="16"><use href="#i-user"/></svg><span>退出登录</span></a>
+      </nav>
+    </div>
+    <div class="side-foot">
+      <div class="side-foot-row"><span>AI 模型</span><b>已配置</b></div>
+      <div class="side-foot-row"><span>本月调用</span><b>42 / 500</b></div>
+      <div class="side-foot-row"><span>上次分析</span><b>14:20</b></div>
+      <div class="side-foot-row"><span>费用上限</span><b>已设 50 元</b></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">监控 / <b>AI 分析</b></div>
+      <div class="spacer"></div>
+      <span class="pill"><svg width="13" height="13"><use href="#i-sparkles"/></svg> 本月剩余 458 次</span>
+      <button class="icon-btn" id="theme-btn" title="切换深色 / 浅色"><svg width="16" height="16"><use href="#i-moon" id="theme-icon"/></svg></button>
+      <div class="avatar">LE</div>
+    </header>
+
+    <div class="content">
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">AI 分析</h1>
+            <p class="page-desc">基于已采集的行情、估值与指标数据生成结构化分析，可追问</p>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-ghost"><svg width="15" height="15"><use href="#i-mail"/></svg> 邮件发送本报告</button>
+            <button class="btn btn-primary"><svg width="15" height="15"><use href="#i-sparkles"/></svg> 重新分析</button>
+          </div>
+        </div>
+
+        <div class="ai-layout">
+          <!-- 左：标的 -->
+          <div class="card stock-list">
+            <div style="padding:12px 12px 10px">
+              <div class="search"><svg width="14" height="14"><use href="#i-search"/></svg><input placeholder="筛选标的"></div>
+            </div>
+            <div class="stock-item on">
+              <div class="cell-avatar">隆基</div>
+              <div class="cell-primary"><div class="cell-name">隆基绿能</div><div class="cell-code num">SH601012</div></div>
+              <div class="price num down">15.44</div>
+            </div>
+            <div class="stock-item">
+              <div class="cell-avatar">宁王</div>
+              <div class="cell-primary"><div class="cell-name">宁德时代</div><div class="cell-code num">SZ300750</div></div>
+              <div class="price num down">186.30</div>
+            </div>
+            <div class="stock-item">
+              <div class="cell-avatar">比亚</div>
+              <div class="cell-primary"><div class="cell-name">比亚迪</div><div class="cell-code num">SZ002594</div></div>
+              <div class="price num up">265.80</div>
+            </div>
+            <div class="stock-item">
+              <div class="cell-avatar">茅台</div>
+              <div class="cell-primary"><div class="cell-name">贵州茅台</div><div class="cell-code num">SH600519</div></div>
+              <div class="price num up">1,682.50</div>
+            </div>
+            <div class="stock-item">
+              <div class="cell-avatar">招行</div>
+              <div class="cell-primary"><div class="cell-name">招商银行</div><div class="cell-code num">SH600036</div></div>
+              <div class="price num up">38.72</div>
+            </div>
+          </div>
+
+          <!-- 中：报告 -->
+          <div class="card">
+            <div class="report-head">
+              <div>
+                <div style="font-size:17px;font-weight:700">隆基绿能 <span class="num muted" style="font-size:13px">SH601012</span></div>
+                <div class="muted" style="font-size:12px;margin-top:3px">生成于 2026-10-21 14:20　·　数据源：雪球 + 指标监控</div>
+              </div>
+              <div class="verdict">
+                <div class="v" style="color:var(--down)">逢低关注</div>
+                <div class="k">综合评级</div>
+              </div>
+              <div class="confidence">
+                <div style="font-size:12px;color:var(--muted)">置信度 <b class="num">72%</b></div>
+                <div class="bar"><i style="width:72%"></i></div>
+              </div>
+            </div>
+
+            <div style="padding:16px 20px 0">
+              <div class="section-title">分析维度</div>
+              <div class="dim-grid">
+                <div class="dim on"><svg width="15" height="15"><use href="#i-chart"/></svg> 技术面</div>
+                <div class="dim on"><svg width="15" height="15"><use href="#i-gauge"/></svg> 估值</div>
+                <div class="dim on"><svg width="15" height="15"><use href="#i-trend-down"/></svg> 相对强弱</div>
+                <div class="dim"><svg width="15" height="15"><use href="#i-list"/></svg> 基本面</div>
+                <div class="dim"><svg width="15" height="15"><use href="#i-info"/></svg> 消息面</div>
+                <div class="dim"><svg width="15" height="15"><use href="#i-alert"/></svg> 风险</div>
+              </div>
+            </div>
+
+            <div class="report-body">
+              <div class="section-title">核心结论</div>
+              <p>
+                股价 <b class="num">15.44</b> 元处于 52 周区间 <b class="num">4.8%</b> 分位，距 52 周低点仅 <b class="num">+3.6%</b>，
+                自高点回撤 <b class="num down">-41.2%</b>，已同时触发「52 周新低」与「52 周回撤 &gt;35%」两项长期指标。
+                短期看，20 日相对沪深300 跑输 <b class="num down">11.0%</b>，尚未达到 15% 阈值，但 5 日跌幅已达基准的 1.4 倍，
+                弱势仍在延续。均线呈空头排列（MA5 &lt; MA10 &lt; MA30），K 线为死叉信号。
+              </p>
+
+              <div class="section-title">关键要点</div>
+              <ul class="point-list">
+                <li><span class="idx">1</span><div><b>长期位置极端偏低</b>：52 周分位 4.8%，属于历史极端区域，向下空间相对有限，但需警惕基本面恶化导致的"新低之后还有新低"。</div></li>
+                <li><span class="idx">2</span><div><b>短期弱势未止</b>：5 日跌幅为基准的 1.4 倍，20 日跑输 11.0%，尚未见明显企稳信号，不建议一次性重仓。</div></li>
+                <li><span class="idx">3</span><div><b>估值参考</b>：PB <b class="num">1.36</b>，接近你设置的第二档 1.50；PE 因亏损不可参考，需改用 PB / PS 判断。</div></li>
+                <li><span class="idx">4</span><div><b>操作建议</b>：若认可长期逻辑，可在 <b class="num">14.90 – 15.40</b> 区间分批建仓，跌破 52 周低点 14.90 则暂停加仓并复盘逻辑。</div></li>
+              </ul>
+
+              <div class="section-title">支撑与风险</div>
+              <div class="pc-grid">
+                <div class="pc pros">
+                  <h5><svg width="14" height="14"><use href="#i-arrow-up"/></svg> 支撑因素</h5>
+                  <ul>
+                    <li>52 周低位，估值分处历史底部区间</li>
+                    <li>PB 1.36 接近自建第二档阈值</li>
+                    <li>行业产能出清推进，龙头份额有望回升</li>
+                  </ul>
+                </div>
+                <div class="pc cons">
+                  <h5><svg width="14" height="14"><use href="#i-arrow-down"/></svg> 风险因素</h5>
+                  <ul>
+                    <li>PE 为负，盈利端尚未修复</li>
+                    <li>短期相对强弱持续跑输基准</li>
+                    <li>均线空头排列，技术面未反转</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="ask-bar">
+              <input class="input" placeholder="继续追问，例如：如果跌破 14.9 怎么办？">
+              <button class="btn btn-primary"><svg width="15" height="15"><use href="#i-send"/></svg> 提问</button>
+            </div>
+            <div class="disclaimer">
+              本内容由 AI 基于公开行情数据生成，<b>不构成投资建议</b>。数据可能存在延迟或错误，请自行核实后决策，盈亏自负。
+            </div>
+          </div>
+
+          <!-- 右：参数与历史 -->
+          <div class="rail">
+            <div class="card rail-card">
+              <div class="rail-title">分析参数</div>
+              <div class="field" style="margin-bottom:12px">
+                <label>模型</label>
+                <select class="select" style="width:100%;padding:8px 11px"><option>deepseek-chat</option><option>gpt-4o-mini</option><option>qwen-plus</option></select>
+              </div>
+              <div class="grid-2" style="gap:10px">
+                <div class="field"><label>温度</label><input class="input" value="0.3"></div>
+                <div class="field"><label>最大 Token</label><input class="input" value="2000"></div>
+              </div>
+              <div class="field" style="margin-top:12px">
+                <label>引用数据范围</label>
+                <select class="select" style="width:100%;padding:8px 11px"><option>近 60 个交易日</option><option>近 120 个交易日</option></select>
+              </div>
+            </div>
+
+            <div class="card rail-card">
+              <div class="rail-title">指标快照</div>
+              <div class="rail-row"><span>52 周分位</span><b class="num up">4.8%</b></div>
+              <div class="rail-row"><span>52 周回撤</span><b class="num up">-41.2%</b></div>
+              <div class="rail-row"><span>20 日相对</span><b class="num">-11.0%</b></div>
+              <div class="rail-row"><span>5 日相对</span><b class="num">1.4×</b></div>
+              <div class="rail-row"><span>K 线信号</span><b class="down">死叉</b></div>
+            </div>
+
+            <div class="card rail-card">
+              <div class="rail-title">历史分析</div>
+              <div class="hist-item on">
+                <div class="cell-avatar">AI</div>
+                <div style="flex:1;min-width:0">
+                  <div class="t">隆基绿能 · 逢低关注</div>
+                  <div class="m">今天 14:20 · 置信度 72%</div>
+                </div>
+              </div>
+              <div class="hist-item">
+                <div class="cell-avatar">AI</div>
+                <div style="flex:1;min-width:0">
+                  <div class="t">宁德时代 · 观望</div>
+                  <div class="m">昨天 15:02 · 置信度 65%</div>
+                </div>
+              </div>
+              <div class="hist-item">
+                <div class="cell-avatar">AI</div>
+                <div style="flex:1;min-width:0">
+                  <div class="t">招商银行 · 持有</div>
+                  <div class="m">10-19 09:40 · 置信度 80%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}订单列表 - 股池监控台{% endblock %}
+{% block crumb %}订单列表{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="page-title">订单列表</h1>
+        <p class="page-desc">监控中的标的与关键估值 · 数据轮询刷新</p>
+    </div>
+    <div class="page-actions">
+        {# 手动刷新行情：后台线程采集（取数节流 30~300s，同步跑会把请求卡死） #}
+        <button type="button" class="btn btn-ghost" data-refresh-quotes
+                data-refresh-url="{{ url_for('stock.refresh_quotes') }}" title="立即拉取一次行情快照">
+            <svg width="14" height="14"><use href="#i-refresh"/></svg> <span data-refresh-text>刷新行情</span>
+        </button>
+        <a href="{{ url_for('stock.create_stock') }}" class="btn btn-primary">
+            <svg width="14" height="14"><use href="#i-plus"/></svg> 添加订单
+        </a>
+    </div>
+</div>
+
+<!-- KPI -->
+<div class="kpi-grid">
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-list"/></svg> 总订单</div>
+        <div class="kpi-value num">{{ stats.total }}</div>
+        <div class="kpi-foot">全部监控标的</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-chart"/></svg> 监控中</div>
+        <div class="kpi-value num">{{ stats.active }}</div>
+        <div class="kpi-foot"><span class="tag tag-down">活跃</span> 参与告警判定</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-bell"/></svg> 触发告警</div>
+        <div class="kpi-value num {{ 'up' if stats.alarm_active else '' }}">{{ stats.alarm_active }}</div>
+        <div class="kpi-foot">当前满足告警阈值</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-cog"/></svg> 采集状态</div>
+        <div class="kpi-value num" style="font-size:21px">
+            {% if stats.monitor_running %}
+            <span class="pill live"><span class="dot"></span> 运行中</span>
+            {% else %}
+            <span class="pill warn"><span class="dot"></span> 已停止</span>
+            {% endif %}
+        </div>
+        <div class="kpi-foot">线程数 {{ stats.thread_count }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <!-- 工具条：搜索 + 状态筛选 -->
+    <div class="toolbar">
+        <form method="GET" class="search" style="flex:1;min-width:220px;max-width:360px">
+            <svg width="15" height="15"><use href="#i-search"/></svg>
+            <input type="text" name="search" value="{{ search_query }}" placeholder="搜索名称或代码…">
+        </form>
+        <div class="chips" data-chip-filter="status,alarm"
+             data-chip-rows="#rows tr[data-status]" data-chip-count="#result-count"
+             data-total="{{ total_count }}">
+            <button type="button" class="chip on" data-filter="all">全部</button>
+            <button type="button" class="chip" data-filter="active">监控中</button>
+            <button type="button" class="chip" data-filter="inactive">已暂停</button>
+            <button type="button" class="chip" data-filter="alarm">触发告警</button>
+        </div>
+        <span class="spacer"></span>
+        <select class="select" data-perpage>
+            <option value="{{ url_for('stock.stock_list', page=page, per_page=5, search=search_query) }}" {% if per_page == 5 %}selected{% endif %}>每页 5 条</option>
+            <option value="{{ url_for('stock.stock_list', page=page, per_page=10, search=search_query) }}" {% if per_page == 10 %}selected{% endif %}>每页 10 条</option>
+            <option value="{{ url_for('stock.stock_list', page=page, per_page=20, search=search_query) }}" {% if per_page == 20 %}selected{% endif %}>每页 20 条</option>
+            <option value="{{ url_for('stock.stock_list', page=page, per_page=50, search=search_query) }}" {% if per_page == 50 %}selected{% endif %}>每页 50 条</option>
+        </select>
+        <span class="result-count" id="result-count">共 {{ total_count }} 条</span>
+    </div>
+
+    <!-- 订单表格 -->
+    <div class="table-wrap">
+        <table class="table-orders">
+            <!-- 固定列宽：**十列全定宽**，宽度不够就横向滚动（.table-wrap 已 overflow-x:auto），
+                 绝不再压缩列宽去挤内容——「标的」列被压到 0 时名称会整个消失。
+                 标的列 300px = 头像 34 + 间距 11 + 名称（容纳 11 字）+ 间距 12 + 按钮 65 + 内边距 28。
+                 操作列定宽并吸附右侧，避免按钮被推到看不见的位置 -->
+            <colgroup>
+                <col style="width:300px">
+                <col style="width:100px">
+                <col style="width:110px">
+                <col style="width:100px">
+                <col style="width:92px">
+                <col style="width:92px">
+                <col style="width:104px">
+                <col style="width:104px">
+                <col style="width:150px">
+                <col style="width:140px">
+            </colgroup>
+            <thead>
+            <tr>
+                <th>标的</th>
+                <th class="right">现价</th>
+                <th class="right" title="近 52 周（365 天）K 线最低价">52周最低</th>
+                <th class="right">卖出价</th>
+                <th class="right">当前 PE</th>
+                <th class="right">当前 PB</th>
+                <th>K线信号</th>
+                <th>状态</th>
+                <th>创建时间</th>
+                <th class="col-actions" style="text-align:right">操作</th>
+            </tr>
+            </thead>
+            <tbody id="rows">
+            {% for stock in stocks %}
+            <tr data-id="{{ stock.id }}" data-status="{{ stock.status }}" data-alarm="{{ 'alarm' if stock.is_alarm_active == 1 else '' }}">
+                <td>
+                    {# 标的列吸收剩余宽度：左侧名称，右侧空档放「AI 分析」快捷入口（跳该标的的 AI 页） #}
+                    <div class="cell-with-action">
+                        <div class="cell-primary">
+                            <span class="cell-avatar">{{ (stock.stock_name or '?')[:1] }}</span>
+                            <span>
+                                <div class="cell-name">{{ stock.stock_name }}</div>
+                                <div class="cell-code num">{{ stock.stock_code }}</div>
+                            </span>
+                        </div>
+                        <a class="btn btn-ghost btn-sm row-ai"
+                           href="{{ url_for('ai.page', stock_id=stock.id) }}"
+                           title="跳转到 {{ stock.stock_name }} 的 AI 分析">
+                            <svg width="13" height="13"><use href="#i-sparkles"/></svg> AI 分析
+                        </a>
+                    </div>
+                </td>
+                <td class="right num price" data-col="price">{{ "%.2f"|format(stock.current_price or 0) }}</td>
+                {# 52周最低：无近一年 K 线数据时显示 —，不显示 0（避免误读为股价为 0） #}
+                <td class="right num muted">{{ "%.2f"|format(stock.low_52w) if stock.low_52w else '—' }}</td>
+                <td class="right num">{{ "%.2f"|format(stock.sell_rate or 0) }}</td>
+                <td class="right num" data-col="pe">{{ "%.2f"|format(stock.current_pe or 0) }}</td>
+                <td class="right num" data-col="pb">{{ "%.2f"|format(stock.current_pb or 0) }}</td>
+                <td>
+                    {% if stock.kline_signal == 'golden_cross' %}
+                    <span class="signal golden"><svg width="12" height="12"><use href="#i-arrow-up"/></svg> 金叉</span>
+                    {% elif stock.kline_signal == 'death_cross' %}
+                    <span class="signal death"><svg width="12" height="12"><use href="#i-arrow-down"/></svg> 死叉</span>
+                    {% else %}
+                    <span class="signal normal"><svg width="12" height="12"><use href="#i-minus"/></svg> 震荡</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {# 内联开关：点击直接切换监控状态，next 带回当前分页/搜索条件 #}
+                    <form method="POST" action="{{ url_for('stock.toggle_status', id=stock.id) }}" class="row-form">
+                        <input type="hidden" name="next" value="{{ request.full_path }}">
+                        <button type="submit" class="status switch-btn {{ 'on' if stock.status == 'active' else '' }}"
+                                aria-pressed="{{ 'true' if stock.status == 'active' else 'false' }}"
+                                title="{{ '点击暂停监控' if stock.status == 'active' else '点击恢复监控' }}">
+                            <i class="switch"></i> {{ '监控中' if stock.status == 'active' else '已暂停' }}
+                        </button>
+                    </form>
+                </td>
+                <td class="num muted">{{ stock.created_at.strftime('%Y-%m-%d %H:%M') if stock.created_at else '—' }}</td>
+                <td class="col-actions">
+                    <div class="row-actions">
+                        <a href="{{ url_for('stock.edit_stock', id=stock.id) }}" class="mini-btn" title="编辑">
+                            <svg width="14" height="14"><use href="#i-edit"/></svg>
+                        </a>
+                        <a href="{{ url_for('stock.alarm_settings') }}?stock_id={{ stock.id }}"
+                           class="mini-btn {{ 'hot' if stock.is_alarm_active == 1 else '' }}"
+                           title="{{ '当前满足告警条件！' if stock.is_alarm_active == 1 else '告警设置' }}">
+                            <svg width="14" height="14"><use href="#i-bell"/></svg>
+                        </a>
+                        <form method="POST" action="{{ url_for('stock.delete_stock', id=stock.id) }}" class="row-form"
+                              onsubmit="return confirm('确定要删除这个订单吗？');">
+                            <button type="submit" class="mini-btn danger" title="删除">
+                                <svg width="14" height="14"><use href="#i-trash"/></svg>
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="9" class="empty-row">暂无订单数据，点击右上角「添加订单」开始监控</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 分页 -->
+    {% if total_pages > 1 %}
+    <div class="pager">
+        <div class="pager-info">
+            显示第 {{ (page-1)*per_page+1 }} 到 {{ [(page*per_page), total_count]|sort|first }} 条，共 {{ total_count }} 条 / {{ total_pages }} 页
+        </div>
+        <div class="pager-nav">
+            <a class="pg {{ 'off' if page == 1 }}" href="{{ url_for('stock.stock_list', page=1, per_page=per_page, search=search_query) }}" title="首页">&laquo;</a>
+            <a class="pg {{ 'off' if page == 1 }}" href="{{ url_for('stock.stock_list', page=page-1, per_page=per_page, search=search_query) }}" title="上一页">&lsaquo;</a>
+            {% set start_page = page-2 if page-2 > 1 else 1 %}
+            {% set end_page = page+2 if page+2 < total_pages else total_pages %}
+            {% for p in range(start_page, end_page+1) %}
+            <a class="pg {{ 'on' if p == page }}" href="{{ url_for('stock.stock_list', page=p, per_page=per_page, search=search_query) }}">{{ p }}</a>
+            {% endfor %}
+            <a class="pg {{ 'off' if page == total_pages }}" href="{{ url_for('stock.stock_list', page=page+1, per_page=per_page, search=search_query) }}" title="下一页">&rsaquo;</a>
+            <a class="pg {{ 'off' if page == total_pages }}" href="{{ url_for('stock.stock_list', page=total_pages, per_page=per_page, search=search_query) }}" title="尾页">&raquo;</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

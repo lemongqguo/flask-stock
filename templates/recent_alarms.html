@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}告警历史 - 股池监控台{% endblock %}
+{% block crumb %}告警历史{% endblock %}
+
+{% macro type_badge(t, subtype) -%}
+    {%- if t == 'price' -%}
+        <span class="type-badge price">价格</span>
+    {%- elif t == 'sell' -%}
+        <span class="type-badge sell">卖出</span>
+    {%- elif t == 'pe' -%}
+        <span class="type-badge pe">PE</span>
+    {%- elif t == 'pb' -%}
+        <span class="type-badge pb">PB</span>
+    {%- elif t == 'indicator' -%}
+        <span class="type-badge indicator">指标{% if subtype %} · {{ {'low52w':'52周新低','drawdown':'52周回撤','rs20':'20日跑输','rs5':'5日倍数','combo':'组合信号'}.get(subtype, subtype) }}{% endif %}</span>
+    {%- else -%}
+        <span class="type-badge">未知</span>
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro mail_badge(s) -%}
+    {%- if s == 'sent' -%}
+        <span class="mail-badge sent"><svg width="11" height="11"><use href="#i-check"/></svg> 已送达</span>
+    {%- elif s == 'failed' -%}
+        <span class="mail-badge failed"><svg width="11" height="11"><use href="#i-alert"/></svg> 发送失败</span>
+    {%- elif s == 'pending' -%}
+        <span class="mail-badge pending">发送中</span>
+    {%- elif s == 'skipped' -%}
+        <span class="mail-badge skipped">未发送</span>
+    {%- else -%}
+        <span class="mail-badge">未知</span>
+    {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="page-title">告警历史</h1>
+        <p class="page-desc">按天分组的时间线 · 含类型与邮件送达状态</p>
+    </div>
+</div>
+
+{% if alarm_stats %}
+<div class="kpi-grid">
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-bell"/></svg> 今日触发</div>
+        <div class="kpi-value num">{{ alarm_stats.today }}</div>
+        <div class="kpi-foot">累计 {{ alarm_stats.total }} 条</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-history"/></svg> 近 7 天</div>
+        <div class="kpi-value num">{{ alarm_stats.last7 }}</div>
+        <div class="kpi-foot">含今日</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-mail"/></svg> 邮件送达</div>
+        <div class="kpi-value num">{{ alarm_stats.mail_sent }}</div>
+        <div class="kpi-foot">未配置收件人时记为「未发送」</div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-alert"/></svg> 发送失败</div>
+        <div class="kpi-value num {{ 'up' if alarm_stats.mail_failed else 'down' }}">{{ alarm_stats.mail_failed }}</div>
+        <div class="kpi-foot">冷却拦截不落库，无法统计</div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <!-- 筛选工具条 -->
+    <div class="toolbar" style="border-bottom:1px solid var(--border-soft)">
+        <form method="GET" style="display:flex;gap:10px;flex-wrap:wrap;flex:1">
+            <div class="search" style="min-width:180px;flex:1;max-width:260px">
+                <svg width="15" height="15"><use href="#i-search"/></svg>
+                <input type="text" name="search" value="{{ search_query }}" placeholder="搜索告警内容…">
+            </div>
+            <input class="input" type="datetime-local" name="start_date" value="{{ start_date }}"
+                   style="width:190px" title="起始时间">
+            <input class="input" type="datetime-local" name="end_date" value="{{ end_date }}"
+                   style="width:190px" title="结束时间">
+            <button type="submit" class="btn btn-sm">
+                <svg width="13" height="13"><use href="#i-search"/></svg> 筛选
+            </button>
+        </form>
+    </div>
+    <div class="toolbar" style="padding-top:10px;padding-bottom:10px">
+        <div class="chips" data-chip-filter="type"
+             data-chip-rows="#timeline .tl-item[data-type]" data-chip-count="#result-count"
+             data-total="{{ total_count }}">
+            <button type="button" class="chip on" data-filter="all">全部</button>
+            <button type="button" class="chip" data-filter="price">价格</button>
+            <button type="button" class="chip" data-filter="sell">卖出</button>
+            <button type="button" class="chip" data-filter="pe">PE</button>
+            <button type="button" class="chip" data-filter="pb">PB</button>
+            <button type="button" class="chip" data-filter="indicator">指标</button>
+        </div>
+        <span class="spacer"></span>
+        <select class="select" data-perpage>
+            <option value="{{ url_for('stock.recent_alarms', page=page, per_page=5, search=search_query, start_date=start_date, end_date=end_date) }}" {% if per_page == 5 %}selected{% endif %}>每页 5 条</option>
+            <option value="{{ url_for('stock.recent_alarms', page=page, per_page=10, search=search_query, start_date=start_date, end_date=end_date) }}" {% if per_page == 10 %}selected{% endif %}>每页 10 条</option>
+            <option value="{{ url_for('stock.recent_alarms', page=page, per_page=20, search=search_query, start_date=start_date, end_date=end_date) }}" {% if per_page == 20 %}selected{% endif %}>每页 20 条</option>
+            <option value="{{ url_for('stock.recent_alarms', page=page, per_page=50, search=search_query, start_date=start_date, end_date=end_date) }}" {% if per_page == 50 %}selected{% endif %}>每页 50 条</option>
+        </select>
+        <span class="result-count" id="result-count">本页 {{ alarms|length }} 条 / 共 {{ total_count }} 条</span>
+    </div>
+
+    <!-- 时间线 -->
+    <div class="timeline" id="timeline">
+        {% set ns = namespace(current_day='') %}
+        {% for alarm in alarms %}
+        {% set day = alarm.alarm_time.strftime('%Y-%m-%d') if alarm.alarm_time else '未知时间' %}
+        {% if day != ns.current_day %}
+        {% set ns.current_day = day %}
+        <div class="tl-day">{{ day }}</div>
+        {% endif %}
+        <div class="tl-item {{ 'is-warn' if alarm.alarm_type == 'sell' else 'is-up' if alarm.alarm_type == 'price' else 'is-down' if alarm.alarm_type in ['pe', 'pb'] else '' }}"
+             data-type="{{ alarm.alarm_type or 'unknown' }}">
+            <span class="tl-dot">
+                <svg width="13" height="13"><use href="#i-{{ 'trend-down' if alarm.alarm_type == 'price' else 'alert' if alarm.alarm_type == 'sell' else 'gauge' if alarm.alarm_type in ['pe','pb'] else 'chart' if alarm.alarm_type == 'indicator' else 'bell' }}"/></svg>
+            </span>
+            <div>
+                <div class="tl-title">
+                    {{ alarm.stock_name or 'N/A' }}
+                    <span class="cell-code num">{{ alarm.stock_code or 'N/A' }}</span>
+                    {{ type_badge(alarm.alarm_type, alarm.alarm_subtype) }}
+                </div>
+                <div class="tl-meta">{{ alarm.alarm_text }}</div>
+                <div class="tl-meta num">{{ alarm.alarm_time.strftime('%H:%M:%S') if alarm.alarm_time else '' }}</div>
+            </div>
+            <div class="tl-right">
+                {{ mail_badge(alarm.notify_status) }}
+                {% if alarm.alarm_level %}
+                <span>第 {{ alarm.alarm_level }} 档</span>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-row" style="padding:48px 20px">暂无告警记录</div>
+        {% endfor %}
+    </div>
+
+    <!-- 分页 -->
+    {% if total_pages > 1 %}
+    <div class="pager" style="border-top:1px solid var(--border-soft)">
+        <div class="pager-info">
+            显示第 {{ (page-1)*per_page+1 }} 到 {{ [(page*per_page), total_count]|sort|first }} 条，共 {{ total_count }} 条 / {{ total_pages }} 页
+        </div>
+        <div class="pager-nav">
+            <a class="pg {{ 'off' if page == 1 }}" href="{{ url_for('stock.recent_alarms', page=1, per_page=per_page, search=search_query, start_date=start_date, end_date=end_date) }}" title="首页">&laquo;</a>
+            <a class="pg {{ 'off' if page == 1 }}" href="{{ url_for('stock.recent_alarms', page=page-1, per_page=per_page, search=search_query, start_date=start_date, end_date=end_date) }}" title="上一页">&lsaquo;</a>
+            {% set start_page = page-2 if page-2 > 1 else 1 %}
+            {% set end_page = page+2 if page+2 < total_pages else total_pages %}
+            {% for p in range(start_page, end_page+1) %}
+            <a class="pg {{ 'on' if p == page }}" href="{{ url_for('stock.recent_alarms', page=p, per_page=per_page, search=search_query, start_date=start_date, end_date=end_date) }}">{{ p }}</a>
+            {% endfor %}
+            <a class="pg {{ 'off' if page == total_pages }}" href="{{ url_for('stock.recent_alarms', page=page+1, per_page=per_page, search=search_query, start_date=start_date, end_date=end_date) }}" title="下一页">&rsaquo;</a>
+            <a class="pg {{ 'off' if page == total_pages }}" href="{{ url_for('stock.recent_alarms', page=total_pages, per_page=per_page, search=search_query, start_date=start_date, end_date=end_date) }}" title="尾页">&raquo;</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
