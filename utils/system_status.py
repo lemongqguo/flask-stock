@@ -37,11 +37,17 @@ def format_duration(seconds):
 
 
 def _xueqiu_state(status):
-    """雪球行情源状态：退避中 > 未配置 Token > 正常。"""
+    """
+    雪球行情源状态：退避中 > 未配置 Token > 正常。
+
+    除了 `ok` 还给出 `tone`（`ok` / `bad`）——**颜色语义由这里判定**，
+    模板与 JS 只负责渲染：正常绿、异常红，避免"谁都能顺手解读一次状态"导致显示不一致。
+    """
     backoff = int(status.get('xueqiu_backoff_remaining') or 0)
     if backoff > 0:
         return {
             'ok': False,
+            'tone': 'bad',
             'text': '限流退避中',
             'reason': status.get('xueqiu_backoff_reason') or '',
         }
@@ -50,11 +56,12 @@ def _xueqiu_state(status):
         from config import XueqiuToken
 
         if not (getattr(XueqiuToken, 'TOKEN', '') or '').strip():
-            return {'ok': False, 'text': '未配置 Token', 'reason': '缺少 XUEQIU_TOKEN'}
+            return {'ok': False, 'tone': 'bad', 'text': '未配置 Token',
+                    'reason': '缺少 XUEQIU_TOKEN'}
     except Exception:  # pragma: no cover - 配置异常不应让页面挂掉
-        return {'ok': False, 'text': '状态未知', 'reason': '读取配置失败'}
+        return {'ok': False, 'tone': 'bad', 'text': '状态未知', 'reason': '读取配置失败'}
 
-    return {'ok': True, 'text': '正常', 'reason': ''}
+    return {'ok': True, 'tone': 'ok', 'text': '正常', 'reason': ''}
 
 
 def build_system_status(monitor):
@@ -83,7 +90,9 @@ def build_system_status(monitor):
         cooldown_seconds = 0
 
     return {
-        'monitor': {'running': running, 'text': '运行中' if running else '已停止'},
+        # 监控停止 = 异常（本该在跑），tone 决定颜色：ok 绿 / bad 红
+        'monitor': {'running': running, 'tone': 'ok' if running else 'bad',
+                    'text': '运行中' if running else '已停止'},
         'session': {'key': session_key, 'text': session_text},
         'cooldown': {'seconds': cooldown_seconds, 'text': format_duration(cooldown_seconds)},
         'xueqiu': _xueqiu_state(status),

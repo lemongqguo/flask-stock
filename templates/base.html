@@ -88,15 +88,18 @@
            首屏由服务端渲染，之后由 theme.js 每 30s 轮询 /stock/api/system_status 更新 #}
         <div class="side-foot" data-system-status
              data-status-url="{{ url_for('stock.api_system_status') }}">
+            {# 状态色由 `tone` 决定（ok 绿 / bad 红），判定在 utils.system_status：
+               模板不做二次解读，避免"文案说正常、颜色显示异常"。
+               交易时段与告警冷却是信息而非健康状态，刻意不上色——"已收盘"变红会误导。 #}
             <div class="side-foot-row"><span>监控</span>
-                <b class="{{ 'down' if system_status.monitor.running else 'muted' }}"
+                <b class="status-{{ system_status.monitor.tone }}"
                    data-status-monitor title="监控线程运行状态">{{ system_status.monitor.text }}</b></div>
             <div class="side-foot-row"><span>交易时段</span>
                 <b data-status-session title="A 股常规交易时段">{{ system_status.session.text }}</b></div>
             <div class="side-foot-row"><span>告警冷却</span>
                 <b class="num" data-status-cooldown title="同一订单同一告警类型的去重间隔">{{ system_status.cooldown.text }}</b></div>
             <div class="side-foot-row"><span>雪球</span>
-                <b class="{{ 'down' if system_status.xueqiu.ok else 'up' }}"
+                <b class="status-{{ system_status.xueqiu.tone }}"
                    data-status-xueqiu title="{{ system_status.xueqiu.reason or '行情数据源' }}">{{ system_status.xueqiu.text }}</b></div>
         </div>
     </aside>

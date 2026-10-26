@@ -107,6 +107,12 @@
 }
 
 :root {
+  /* 状态色别名：健康=绿、异常=红。
+     刻意不直接写 `up` / `down`——那两个是「红涨绿跌」的行情语义（down 才是绿），
+     拿它当"正常"用，代码读起来就像把正常显示成下跌。别名在此处解析，
+     会跟着当前主题（:root[data-theme=...]）的 up/down 走。 */
+  --ok: var(--down);
+  --bad: var(--up);
   --sidebar-w: 236px;
   --radius: 14px;
   --radius-sm: 9px;
@@ -185,6 +191,10 @@ a { color: inherit; text-decoration: none; }
 .side-foot { margin-top: auto; padding: 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border-soft); }
 .side-foot-row { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); padding: 3px 0; }
 .side-foot-row b { color: var(--text-2); font-weight: 600; }
+/* 运行状态色：正常绿 / 异常红（判定来自 utils.system_status 的 tone，不由模板解读）。
+   选择器必须带 `.side-foot-row`——上面的 `.side-foot-row b` 特异性更高，裸 `.status-ok` 会被它压掉。 */
+.side-foot-row b.status-ok { color: var(--ok); }
+.side-foot-row b.status-bad { color: var(--bad); }
 
 /* 侧栏折叠：与窄屏（≤1000px）共用同一套「只留图标」的表现，避免两套逻辑漂移。
    注意隐藏的是 .nav-group-label 里的 span，不是整块标题——整块隐藏会把折叠按钮一起弄没。 */

@@ -101,7 +101,8 @@ spec/
 > [侧栏导航分组](./archive/changes/2026-10-23-sidebar-groups.md)（008，交易 / 监控 / 系统三组 + 指标监控徽标）、
 > [账户设置落地](./archive/changes/2026-10-23-account-profile.md)（001/003/008，个人资料可写 + 默认基准指数四选 + 告警通知开关 + 每日汇总邮件）、
 > [AI 追问 Composer](./archive/changes/2026-10-23-ai-composer.md)（007/008，模型选择 + 运行时密钥 + 就地连通测试）、
-> [连通测试入口唯一化](./archive/changes/2026-10-23-ai-test-entry.md)（007/008，Composer 内「测试连通性」pill，参数卡按钮删除）。
+> [连通测试入口唯一化](./archive/changes/2026-10-23-ai-test-entry.md)（007/008，Composer 内「测试连通性」pill，参数卡按钮删除）、
+> [侧栏运行状态上色](./archive/changes/2026-10-26-sidebar-status-colors.md)（008，正常绿 / 异常红，tone 由 `utils/system_status` 统一判定）。
 
 已合入的变更见 [`spec/changes/`](./changes/)（最新：[2026-10-21 优雅退出](./changes/2026-10-21-graceful-shutdown.md)）。
 新建变更见 [`spec/changes/README.md`](./changes/README.md)。

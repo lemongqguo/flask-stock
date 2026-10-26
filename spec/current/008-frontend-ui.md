@@ -109,6 +109,14 @@
   [2026-10-22 刷新行情按钮](../changes/2026-10-22-refresh-quotes-button.md)。
 - **系统状态必须是实时的**：侧栏底部 4 行（监控 / 交易时段 / 告警冷却 / 雪球）与顶栏 `pill live` 徽标，数据全部来自 `utils/system_status.build_system_status(monitor)`，由 `app.context_processor` 注入 `system_status` 做首屏渲染，`theme.js` 再按 `data-status-url` 每 30s 轮询 `/stock/api/system_status` 局部更新（页面隐藏时跳过）。
   **禁止写死文案**——模板只渲染，文案判定只在 `utils/system_status.py`。
+- **运行状态要上色**：`build_system_status()` 的 `monitor` / `xueqiu` 增带 `tone`（`ok` / `bad`），
+  模板渲染成 `status-ok`（**绿**）/ `status-bad`（**红**）——正常绿、异常红；
+  颜色判定同样只在 `utils/system_status.py`，模板与 `theme.js` 都不做二次解读（否则首屏颜色对、轮询后不对）。
+  两个坑：① 必须写 `.side-foot-row b.status-ok`，裸 `.status-ok` 会被 `.side-foot-row b`（特异性更高）的灰色压掉；
+  ② 不要复用行情的 `up` / `down`——本项目红涨绿跌，`--up` 是红、`--down` 才是绿，直接拿来当"正常"会整反；
+  用 `--ok` / `--bad` 语义别名。
+  交易时段与告警冷却**刻意保持中性色**（它们是信息不是健康状态，"已收盘"变红会误导）。
+  见 [2026-10-26 侧栏状态上色](../archive/changes/2026-10-26-sidebar-status-colors.md)。
 
 - **指标监控页的数据缺失必须显性化**：缺快照 / 缺 52 周高低 / 缺 20 日收益的单元格一律渲染「—」「未采集」，
   **不得渲染成 0%**——0% 看起来像"很健康"，会被误读成正常。页面只读库内快照，不请求雪球；

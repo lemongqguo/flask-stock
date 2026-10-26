@@ -16,7 +16,7 @@
 | 待归档变更 | 9（006 指标监控：待人工确认 UI 与真实雪球采集周期；**007 AI 页改版一**；**订单列表 AI 快捷入口**；**007 AI 页改版二（搜索式工作台）**：均待人工确认观感；**AI_MODEL 支持清单**：待人工确认下拉；**006 指标告警改四项 AND 组合触发**：待真实环境验证；**006 指标页 AI 快捷入口**、**006 指标页分页 + AI 入口换配色**：待人工确认观感；**004 收盘后照常采集**：待观察真实收盘后日志） |
 | 已闭环缺陷 | 15（D-01 ~ D-15） |
 | 未闭环待办 | 9（T-01 ~ T-09，P1: 3 / P2: 6）；T-12 已于 2026-10-22 验证闭环 |
-| 自动化测试 | 626 个用例（标准库 `unittest`）。运行方式：`stockenv\Scripts\python.exe tests/run_all.py`；本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
+| 自动化测试 | 634 个用例（标准库 `unittest`）。运行方式：`stockenv\Scripts\python.exe tests/run_all.py`；本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
 
 > **归档规则**：变更记录置为「已合入」后移入 `archive/changes/`。007 首次交付已于 2026-10-22 完成真实模型调用验证并归档；
 > 006（待真实雪球周期）与 007 改版（待人工确认三栏观感）暂留 `changes/`。
@@ -146,6 +146,7 @@
 | 2026-10-22 | **AI 页改版**：`/stock/ai/` 改三栏（可搜索标的 / 报告 / 参数 + 快照 + 历史）；新增 `AI_MODELS` 模型下拉（服务端白名单）、5 个分析维度（进提示词并落库）、`stock_ai_config.model/dimensions` 两列；修复追问提示词取错下标导致数据上下文丢失；新增 14 个用例（累计 457 全部通过） | [007](./current/007-ai-analysis.md) / [008](./current/008-frontend-ui.md) | [2026-10-22 AI 页改版](./changes/2026-10-22-ai-analysis-ui.md) |
 | 2026-10-22 | **AI_MODEL 支持逗号分隔清单**：用户把 5 个模型填进 `AI_MODEL`，旧实现把整串当一个 ID（下拉只有 1 项，且整串会被发给网关必失败）。`AI_MODEL` 现在也按 `,` / `;` 拆分（第一项 = 默认模型），新增 `default_model()` 统一"页面显示 / 真实下发 / `effective()`"三个取值口；库里保存的模型失效时回退到默认并标注「已回退」，表单提交仍显式报错。新增 5 个用例（累计 479 全部通过） | [007](./current/007-ai-analysis.md) | [2026-10-22 AI_MODEL 支持清单](./changes/2026-10-22-ai-model-list.md) |
 | 2026-10-22 | **AI 页改版二（搜索式工作台）**：去掉全量标的左栏，改为顶部 hero 搜索框 + 工作台（`.ai-work`：标的条 / 报告 + 参数 + 快照 + 历史）；新增 `GET /stock/ai/api/search`（服务端真查库，参数化 LIKE 名称/代码，≤12 条，空 `q` 返回空）、`StockAiReport.list_recent`、`DIMENSION_DESCS`；`?stock_id=` 缺失不再默认选中第一只，改为「未选标的」空态（能力卡片 + 最近分析）；现价改为优先取 `stock_warehouse.current_price`；新增 12 个用例（累计 474 全部通过） | [007](./current/007-ai-analysis.md) / [008](./current/008-frontend-ui.md) | [2026-10-22 AI 页改版二](./changes/2026-10-22-ai-analysis-workspace.md) |
+| 2026-10-26 | **侧栏运行状态上色**：`build_system_status()` 增 `tone`（ok/bad），监控「运行中」与雪球「正常」显示**绿色**、异常显示**红色**（新增 `--ok`/`--bad` 别名，避免复用红涨绿跌的 `up`/`down` 把颜色整反）；修正 `.side-foot-row b` 特异性压掉颜色类的老问题；轮询时颜色随 `tone` 一起更新；交易时段与告警冷却保持中性色。新增 8 个用例（累计 634 全部通过） | [008](./current/008-frontend-ui.md) | [2026-10-26 侧栏状态上色](./archive/changes/2026-10-26-sidebar-status-colors.md) |
 | 2026-10-23 | **修复 D-15（暗色下拉白底）**：两套主题声明 `color-scheme: dark/light`，`.select option` / `.ask-select option` 显式钉背景与文字色；新增 `tests/test_theme_controls.py` 5 个用例（累计 548 全部通过） | [008](./current/008-frontend-ui.md) | 缺陷修复，无独立变更记录（见台账 D-15） |
 | 2026-10-23 | **连通测试入口唯一化**：Composer 的「密钥 sk-***」pill 改名为「测试连通性」（脱敏密钥移到面板顶部），右栏参数卡的「连通测试」按钮删除（只留脱敏文本指向底部）；路由与参数未变；新增 2 个用例（累计 543 全部通过） | [007](./current/007-ai-analysis.md)、[008](./current/008-frontend-ui.md) | [2026-10-23 连通测试入口唯一化](./archive/changes/2026-10-23-ai-test-entry.md) |
 | 2026-10-23 | **AI 追问 Composer**：底部提问框改为 Composer（多行输入 + Enter 发送 + 底部工具条 + 圆形发送键）；「深度思考」位置改为**模型下拉**（仅作用于本次追问，真实下发并落库），「智能搜索」位置改为**密钥**（仅存进程内存，不落库/不回显/不写日志）+ 就地「测试连通性 / 用回环境变量」；`/stock/ai/test` 新增 `api_key` / `model` / `clear_key`；密钥入口始终可点（未就绪也能录密钥）；新增 14 个用例（累计 541 全部通过） | [007](./current/007-ai-analysis.md)、[008](./current/008-frontend-ui.md) | [2026-10-23 追问 Composer](./archive/changes/2026-10-23-ai-composer.md) |

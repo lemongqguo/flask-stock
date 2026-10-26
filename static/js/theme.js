@@ -436,23 +436,24 @@ function initSystemStatus() {
     if (el && text !== undefined) el.textContent = text;
   }
 
+  /* 颜色跟文案一起更新：tone 由服务端判定（ok 绿 / bad 红），前端不再二次解读状态，
+     否则"文案说正常、颜色还是红"这种漂移只会在 30s 轮询后才暴露。 */
+  function setStatus(selector, item) {
+    if (!root || !item) return;
+    const el = root.querySelector(selector);
+    if (!el) return;
+    if (item.text !== undefined) el.textContent = item.text;
+    el.classList.remove('status-ok', 'status-bad');
+    if (item.tone) el.classList.add('status-' + item.tone);
+  }
+
   function apply(data) {
     if (!data) return;
     if (root) {
-      setText('[data-status-monitor]', data.monitor && data.monitor.text);
+      setStatus('[data-status-monitor]', data.monitor);
       setText('[data-status-session]', data.session && data.session.text);
       setText('[data-status-cooldown]', data.cooldown && data.cooldown.text);
-      setText('[data-status-xueqiu]', data.xueqiu && data.xueqiu.text);
-      const mon = root.querySelector('[data-status-monitor]');
-      if (mon && data.monitor) {
-        mon.classList.toggle('down', !!data.monitor.running);
-        mon.classList.toggle('muted', !data.monitor.running);
-      }
-      const xq = root.querySelector('[data-status-xueqiu]');
-      if (xq && data.xueqiu) {
-        xq.classList.toggle('down', !!data.xueqiu.ok);
-        xq.classList.toggle('up', !data.xueqiu.ok);
-      }
+      setStatus('[data-status-xueqiu]', data.xueqiu);
     }
     if (pill && data.monitor) {
       // 停止时去掉 live，呼吸点随之停止
