@@ -6,7 +6,8 @@ import math
 import threading
 import time
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import (Blueprint, flash, jsonify, redirect, render_template, request,
+                   session, url_for)
 
 from config import Config
 from models.account_settings import resolve_bench_code
@@ -18,6 +19,7 @@ from models.stock_pb import StockPb
 from models.stock_pe import StockPe
 from models.stock_warehouse import StockWarehouse
 from utils.decorators import login_required
+from utils.access import can_manage, owner_scope
 from utils.indicator_rules import (
     DEFAULT_THRESHOLDS,
     SUBTYPES,
@@ -53,8 +55,10 @@ def stock_list():
     if per_page not in valid_per_page_options:
         per_page = 10
     
-    # 获取订单数据
+    # 获取订单数据：scope = 可见范围（普通用户只看自己名下，管理员见全量）
+    scope = owner_scope()
     stocks, total_count = StockMaster.get_all_with_details(
+        owner_user_id=scope,
         page=page, 
         per_page=per_page, 
         search_query=search_query
@@ -76,9 +80,9 @@ def stock_list():
     from models.stock_monitor import monitor  # 导入监控实例
     stats = {
         'total': total_count,
-        'active': StockMaster.count_by_status('active'),
-        'inactive': StockMaster.count_by_status('inactive'),
-        'alarm_active': StockMaster.count_alarm_active(),
+        'active': StockMaster.count_by_status('active', owner_user_id=scope),
+        'inactive': StockMaster.count_by_status('inactive', owner_user_id=scope),
+        'alarm_active': StockMaster.count_alarm_active(owner_user_id=scope),
         'thread_count': threading.active_count(),  # 获取当前活跃线程数
         'monitor_running': monitor.is_running  # 获取监控是否运行的状态
     }
@@ -112,18 +116,19 @@ def create_stock():
             flash('订单名称和订单代码为必填项。', 'error')
             return render_template('stock_order_form.html', form_action='create')
         
-        # 检查订单代码是否已存在
-        existing_stock = StockMaster.get_by_stock_code(stock_code)
+        # 检查订单代码是否已存在。**限定在自己名下**：同一代码允许被不同用户各持有一条
+        existing_stock = StockMaster.get_by_stock_code(stock_code, owner_user_id=session['user_id'])
         if existing_stock:
             flash('订单代码已存在，请使用其他订单代码。', 'error')
             return render_template('stock_order_form.html', form_action='create')
         
-        # 创建主订单记录
+        # 创建主订单记录（归属取当前登录用户，不接受客户端传值）
         new_stock = StockMaster.create(
             stock_name=stock_name,
             stock_code=stock_code,
             target_pettm=target_pettm,
-            target_pb=target_pb
+            target_pb=target_pb,
+            user_id=session['user_id']
         )
         
         if new_stock:
@@ -209,8 +214,10 @@ def edit_stock(id):
     编辑订单页面
     """
     stock = StockMaster.get_by_id(id)
-    if not stock:
-        flash('订单不存在。', 'error')
+    # 越权防护（2026-10-26 多用户数据隔离）：不属于当前用户的订单按"不存在"处理，
+    # 不回显"存在但你看不了"，避免把别人的订单存在性泄露出去
+    if not stock or not can_manage(stock):
+        flash('订单不存在或无权访问。', 'error')
         return redirect(url_for('stock.stock_list'))
     
     if request.method == 'POST':
@@ -227,7 +234,7 @@ def edit_stock(id):
             return render_template('stock_order_form.html', form_action='edit', **_form_context(stock))
         
         # 检查订单代码是否与其他记录冲突
-        existing_stock = StockMaster.get_by_stock_code(stock_code)
+        existing_stock = StockMaster.get_by_stock_code(stock_code, owner_user_id=session['user_id'])
         if existing_stock and existing_stock.id != id:
             flash('订单代码已存在，请使用其他订单代码。', 'error')
             return render_template('stock_order_form.html', form_action='edit', **_form_context(stock))
@@ -347,8 +354,10 @@ def delete_stock(id):
     删除订单
     """
     stock = StockMaster.get_by_id(id)
-    if not stock:
-        flash('订单不存在。', 'error')
+    # 越权防护（2026-10-26 多用户数据隔离）：不属于当前用户的订单按"不存在"处理，
+    # 不回显"存在但你看不了"，避免把别人的订单存在性泄露出去
+    if not stock or not can_manage(stock):
+        flash('订单不存在或无权访问。', 'error')
         return redirect(url_for('stock.stock_list'))
     
     # 删除主订单记录（由于设置了外键约束ON DELETE CASCADE，关联记录也会被自动删除）
@@ -380,8 +389,9 @@ def toggle_status(id):
     目标状态由服务端读取当前值后取反得出，不接受客户端传值，避免写入非法状态。
     """
     stock = StockMaster.get_by_id(id)
-    if not stock:
-        flash('订单不存在。', 'error')
+    # 越权防护（2026-10-26 多用户数据隔离）：详见 edit_stock 的同款注释
+    if not stock or not can_manage(stock):
+        flash('订单不存在或无权访问。', 'error')
         return redirect(_safe_list_url())
 
     # get_by_id 返回的是 dict 行（BaseModel.execute_query 结果），不是模型对象
@@ -490,7 +500,8 @@ def indicator_list():
         per_page = 10
 
     try:
-        stocks, total_count = StockMaster.get_all(page=page, per_page=per_page,
+        stocks, total_count = StockMaster.get_all(owner_user_id=owner_scope(),
+                                                 page=page, per_page=per_page,
                                                  search_query=None)
     except Exception:
         logger.exception('加载指标监控列表失败')
@@ -551,7 +562,14 @@ def alarm_settings():
     if request.method == 'POST':
         stock_id = request.form.get('stock_id', type=int)
         alarm_type = request.form.get('alarm_type')  # 'warehouse', 'pe', 'pb', 'indicator'
-        
+
+        # 越权防护（2026-10-26）：目标订单必须属于当前用户，否则整次提交作废。
+        # stock_id 由客户端表单提供，更要先验身再动手。
+        target = StockMaster.get_by_id(stock_id) if stock_id else None
+        if not target or not can_manage(target):
+            flash('订单不存在或无权修改其告警设置。', 'error')
+            return redirect(url_for('stock.alarm_settings'))
+
         if alarm_type == 'warehouse':
             dividend_yield = request.form.get('dividend_yield', type=float)
             sell_rate = request.form.get('sell_rate', type=float)
@@ -665,6 +683,9 @@ def alarm_settings():
     if stock_id:
         # 获取指定的股票信息
         stock = StockMaster.get_by_id(stock_id)
+        if stock and not can_manage(stock):
+            # 别人的订单：当成不存在，不报错也不泄露其存在性
+            stock = None
         if stock:
             # 获取指定股票的关联设置
             warehouse = StockWarehouse.get_by_stock_master_id(stock_id)
@@ -685,7 +706,8 @@ def alarm_settings():
     else:
         # 获取所有订单
         try:
-            stocks, _ = StockMaster.get_all(page=1, per_page=100, search_query=None)
+            stocks, _ = StockMaster.get_all(page=1, per_page=100, search_query=None,
+                                            owner_user_id=owner_scope())
         except Exception:
             logger.exception('加载订单列表失败')
             flash('加载订单列表失败，请稍后重试。', 'error')
@@ -734,8 +756,9 @@ def recent_alarms():
     if per_page not in valid_per_page_options:
         per_page = 10
     
-    # 获取告警数据
+    # 获取告警数据：告警没有自己的归属列，靠 JOIN stock_master 继承订单归属
     alarms, total_count = StockAlarm.get_all_alarms(
+        owner_user_id=owner_scope(),
         page=page,
         per_page=per_page,
         search_query=search_query,
@@ -756,7 +779,7 @@ def recent_alarms():
         search_query=search_query,
         start_date=start_date,
         end_date=end_date,
-        alarm_stats=StockAlarm.get_stats()
+        alarm_stats=StockAlarm.get_stats(owner_user_id=owner_scope())
     )
 
 @stock_bp.route('/refresh_quotes', methods=['POST'])
@@ -775,7 +798,8 @@ def refresh_quotes():
     # 只接受正整数，并限制规模（防止构造超大请求把整表拉出来）
     ids = [int(i) for i in raw_ids if str(i).isdigit()][:200]
 
-    quotes = StockMaster.get_quotes_by_ids(ids)
+    # 归属过滤：传进来的 id 里有别人的订单也只会拿到空结果，不会泄露行情
+    quotes = StockMaster.get_quotes_by_ids(ids, owner_user_id=owner_scope())
     return jsonify({
         'quotes': quotes,
         'updated_at': time.strftime('%H:%M:%S'),
@@ -805,7 +829,14 @@ def api_kline_data(stock_id):
     """
     try:
         from models.stock_kline import StockKline
-        
+
+        # 越权防护（2026-10-26）：K 线跟着订单走，不是自己的订单不给数据
+        stock = StockMaster.get_by_id(stock_id)
+        if not stock or not can_manage(stock):
+            logger.warning('越权访问 K 线数据: stock_id=%s user_id=%s',
+                           stock_id, session.get('user_id'))
+            return jsonify({'success': False, 'error': '无权访问该标的'}), 403
+
         # 从数据库获取最近30天的K线数据
         query = """
         SELECT trade_date, close_price, ma5, ma10, ma30, signal_type

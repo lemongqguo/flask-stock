@@ -4,7 +4,7 @@
 > 每一份 `current/` 规格被修改，必须回到本文件更新对应条目的状态。两者不一致视为维护事故。
 > 更新时机与格式要求见 [rules/spec-maintenance.md](./rules/spec-maintenance.md)。
 
-**最后更新**：2026-10-23　|　**当前基线**：`v1.5.0`
+**最后更新**：2026-10-26　|　**当前基线**：`v1.5.0`
 
 ---
 
@@ -16,15 +16,16 @@
 | 待归档变更 | 9（006 指标监控：待人工确认 UI 与真实雪球采集周期；**007 AI 页改版一**；**订单列表 AI 快捷入口**；**007 AI 页改版二（搜索式工作台）**：均待人工确认观感；**AI_MODEL 支持清单**：待人工确认下拉；**006 指标告警改四项 AND 组合触发**：待真实环境验证；**006 指标页 AI 快捷入口**、**006 指标页分页 + AI 入口换配色**：待人工确认观感；**004 收盘后照常采集**：待观察真实收盘后日志） |
 | 已闭环缺陷 | 15（D-01 ~ D-15） |
 | 未闭环待办 | 9（T-01 ~ T-09，P1: 3 / P2: 6）；T-12 已于 2026-10-22 验证闭环 |
-| 自动化测试 | 578 个用例（标准库 `unittest`）。运行方式：`stockenv\Scripts\python.exe tests/run_all.py`；本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
+| 自动化测试 | 626 个用例（标准库 `unittest`）。运行方式：`stockenv\Scripts\python.exe tests/run_all.py`；本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
 
 > **归档规则**：变更记录置为「已合入」后移入 `archive/changes/`。007 首次交付已于 2026-10-22 完成真实模型调用验证并归档；
 > 006（待真实雪球周期）与 007 改版（待人工确认三栏观感）暂留 `changes/`。
 
 **整体阶段**：M1~M4 的主要缺陷已闭环，进入"补长尾 + 建 CI"阶段。
-**本轮进度**：007 完成两轮交付——① 能力落地（表 / 拦截 / 真实模型调用全通）② **页面改版**
-（三栏 + 标的搜索 + 模型选择 + 分析维度，并修掉「追问丢数据上下文」的提示词缺陷）；
-006 仍待人工确认观感与真实采集周期。
+**本轮进度（2026-10-26）**：完成**多用户数据隔离**——订单归属（`stock_master.user_id`）、
+角色（`users.role`）、全站可见性作用域、**越权写操作拦截**、按人唯一（[ADR-005](./decisions/005-per-user-stock-code-uniqueness.md)）、
+监控本轮结果共享、告警邮件按归属人发送。真实库迁移已落地（92 条订单回填、唯一键与外键就位），
+新增 48 个用例（累计 626 全通过）。**待人工确认**：两种角色视角的页面观感、真实邮件送达、真实雪球去重。
 
 ---
 
@@ -34,14 +35,16 @@
 
 | 模块 | 状态 | 关联规格 | 实现位置 | 备注 |
 | --- | --- | --- | --- | --- |
-| 用户注册/登录/登出 | 已实现 | [001](./current/001-user-auth.md) | `views/auth.py`、`models/user.py` | 服务端强制密码 ≥ 6 位；仍无 CSRF（T-06） |
+| 用户注册/登录/登出 | 已实现 | [001](./current/001-user-auth.md) | `views/auth.py`、`models/user.py` | 服务端强制密码 ≥ 6 位；登录写入 `session['role']`；仍无 CSRF（T-06） |
 | 个人资料 / 修改密码 | 已实现 | [001](./current/001-user-auth.md) | `views/auth.py`、`models/user.py`、`models/account_settings.py` | 已下沉为 `User.update_password()`；资料可写（手机号 / 默认基准指数 / 通知偏好） |
 | 登录拦截（全局 + 装饰器） | 已实现 | [001](./current/001-user-auth.md) | `app.py`、`utils/decorators.py` | 双重校验；死装饰器已删除 |
 | 订单列表（分页/搜索） | 已实现 | [002](./current/002-stock-order.md) | `views/stock_orders.py`、`models/base.py` | 裸 `WHERE` 隐患已修（D-07） |
 | 订单创建 / 编辑 / 删除 | 已实现 | [002](./current/002-stock-order.md) | `views/stock_orders.py` | 删除依赖外键 CASCADE |
 | 告警阈值设置（价格/PE/PB） | 已实现 | [003](./current/003-alarm-thresholds.md) | `views/stock_orders.py`、`utils/alarm_rules.py` | 判定规则收敛为纯函数 |
 | 告警冷却 / 去重 | 已实现 | [003](./current/003-alarm-thresholds.md) | `utils/alarm_throttle.py` | 默认 4h；条件消失即撤销 |
-| 告警历史查询 | 已实现 | [003](./current/003-alarm-thresholds.md) | `views/stock_orders.py`、`database.py` | 已补 `alarm_time` 索引（D-09） |
+| 告警历史查询 | 已实现 | [003](./current/003-alarm-thresholds.md) | `views/stock_orders.py`、`database.py` | 已补 `alarm_time` 索引（D-09）；**2026-10-26 起按订单归属过滤** |
+| **多用户数据隔离（订单归属 / 可见性 / 越权拦截）** | 已实现（2026-10-26 新增） | [001](./current/001-user-auth.md)、[002](./current/002-stock-order.md) | `utils/access.py`（唯一判定入口）、`database.py`（迁移）、`views/stock_orders.py`、`views/ai_analysis.py`、`models/stock_master.py`、`models/stock_alarm.py`、`models/stock_monitor.py` | `stock_master.user_id` + `users.role`；唯一键改 `UNIQUE(user_id, stock_code)`；监控本轮结果按代码共享；告警邮件按归属人发；[ADR-005](./decisions/005-per-user-stock-code-uniqueness.md) |
+| **管理员角色与谋求方式** | 已实现（2026-10-26 新增） | [001](./current/001-user-auth.md) | `models/user.py`、`database.py`、`app.py` | 首个注册用户自动 admin；`flask set-admin <username>`；角色写 session，**变更后需重新登录** |
 | 后台监控线程 | 已实现 | [004](./current/004-monitor-service.md) | `models/stock_monitor.py`、`utils/trading_time.py` | 线程唯一、交易时段降频、可中断休眠；无运行时控制面（T-05） |
 | 行情/PE/PB 回写 | 已实现 | [004](./current/004-monitor-service.md) | `models/stock_monitor.py` | 分步 try/except + 错误计数 |
 | 邮件告警通知 | 已实现 | [004](./current/004-monitor-service.md) | `utils/mail_sender.py`、`config.py` | 收件人前置校验 + 超时 + 开关 |
@@ -94,6 +97,9 @@
 | T-07 | P2 | 负 PE 会命中 PE 档位，是否过滤待产品决策 | [003](./current/003-alarm-thresholds.md) | 待办 |
 | T-08 | P2 | 历史 K 线的 MA5/MA10/MA30 未回填（stock_id=1：147 条仅 36 条有值），K 线图前段无均线 | [005](./current/005-kline-signal.md) | 待办 |
 | T-09 | P2 | 告警历史「冷却拦截」数无法统计——被冷却拦截的告警不落库，无数据可算 | [003](./current/003-alarm-thresholds.md) | 待办 |
+| T-10 | P1 | **每日汇总邮件仍是全局口径**：汇总所有用户近 24h 告警发到全局收件人，未按归属人拆分。当前 `notify_daily` 默认关闭无影响，**但一旦有人开启即构成跨用户泄露**，须先改造 | [003](./current/003-alarm-thresholds.md)、[004](./current/004-monitor-service.md) | 待办 |
+| T-11 | P2 | **管理员列表没有「归属用户」列**：admin 看到全量订单但看不出每行属于谁，用户多了难以分辨 | [002](./current/002-stock-order.md) | 待办 |
+| T-14 | P2 | 同一只票被多人持有时，行情 / K 线 / 指标快照按人重复落库；未在真实环境验证监控去重的实际请求量 | [004](./current/004-monitor-service.md) | 待办 |
 | T-12 | P1 | AI 分析未在真实凭据下验证 | [007](./current/007-ai-analysis.md) | **已验证**（2026-10-22 真实网关跑通连通 / 分析 / 追问 / 双风格；见变更记录 §8.4） |
 
 > 变更明细见 [2026-10-21 M1 缺陷治理](./changes/2026-10-21-m1-defect-hardening.md)。
@@ -150,6 +156,7 @@
 | 2026-10-23 | **指标监控页加「AI 分析」快捷入口**（与订单列表同款）：每行标的右端 ghost 按钮直达 `/stock/ai/?stock_id=<本行>`，复用 `.cell-with-action` / `.row-ai` 与三层 `min-width:0` 收缩规则，**不新增列**、纯 GET 链接；判定 / 告警 / 采集零改动；新增 3 个用例（累计 563） | [006](./current/006-stock-indicator.md)、[007](./current/007-ai-analysis.md)、[008](./current/008-frontend-ui.md) | [2026-10-23 指标页 AI 快捷入口](./changes/2026-10-23-indicator-ai-shortcut.md) |
 | 2026-10-23 | **指标监控页分页 + AI 入口换配色**：`?page=` / `?per_page=` 默认每页 10 条（可选 5/10/20/50，与订单列表同款 select 与 `.pager`），KPI「监控标的」改为全量口径、命中/未采集为本页口径；行内 AI 入口改为**可切换变体**（`.row-ai.blue` 蓝色 / 订单页保持紫色默认）；表格七列全定宽 1160（窄屏横向滚动）；新增 10 个用例（累计 573） | [006](./current/006-stock-indicator.md)、[008](./current/008-frontend-ui.md) | [2026-10-23 指标页分页](./changes/2026-10-23-indicator-pagination.md) |
 | 2026-10-23 | **收盘后照常采集**（原 D-04 是"非交易时段跳过整轮"，导致收盘价 / 当日 K 线不落库）：删掉跳过分支，非交易时段跑同一条 `check_and_alert` 链路，靠 `MONITOR_OFF_HOURS_ROUND_INTERVAL`(1800s) 与 `MONITOR_OFF_HOURS_FETCH_MIN/MAX_DELAY`(60~300s) 放慢；新增 `MONITOR_ROUND_INTERVAL`(0) 保留交易时段现状；删除死配置 `MONITOR_STRICT_TRADING_HOURS`；新增 5 个用例（累计 578） | [004](./current/004-monitor-service.md)、[006](./current/006-stock-indicator.md)、[003](./current/003-alarm-thresholds.md) | [2026-10-23 收盘后照常采集](./changes/2026-10-23-offhours-collection.md) |
+| 2026-10-26 | **多用户数据隔离**：订单归属 `stock_master.user_id` + 角色 `users.role`（admin 见全量 / user 见自己）+ 判定入口唯一化 `utils/access.py`；全站可见性作用域（列表 / 指标页 / 告警设置 / 告警历史 / K 线 API / 刷新行情 / AI 页与搜索 / 侧栏徽标）+ 写操作越权拦截；唯一键由 `UNIQUE(stock_code)` 改 `UNIQUE(user_id, stock_code)`（[ADR-005](./decisions/005-per-user-stock-code-uniqueness.md)）+ 监控本轮结果按代码共享（同代码只请求一次雪球）+ 告警邮件按归属人邮箱与其通知开关；真实库迁移落地（92 条订单回填，`uk_user_code` 已验证拦重复）；新增 48 个用例（累计 626 全通过） | [001](./current/001-user-auth.md)、[002](./current/002-stock-order.md)、[003](./current/003-alarm-thresholds.md)、[004](./current/004-monitor-service.md)、[007](./current/007-ai-analysis.md) | [2026-10-26 多用户数据隔离](./archive/changes/2026-10-26-multi-user-ownership.md) |
 
 ---
 

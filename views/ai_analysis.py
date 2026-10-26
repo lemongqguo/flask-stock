@@ -38,6 +38,7 @@ from utils.ai_prompt import (
     build_messages,
     parse_report,
 )
+from utils.access import can_manage, owner_scope
 from utils.decorators import login_required
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,9 @@ def _load_context(stock_id, scope=None):
     :return: (stock, context)；stock 不存在时返回 (None, None)
     """
     stock = StockMaster.get_by_id(stock_id)
-    if not stock:
+    # 越权防护（2026-10-26）：AI 分析消耗的是大家共享的月度额度与 Token，
+    # 别人的标的直接按不存在处理——既不分析，也不写进自己的历史
+    if not stock or not can_manage(stock):
         return None, None
 
     warehouse = StockWarehouse.get_by_stock_master_id(stock_id)
@@ -142,7 +145,8 @@ def _price_map(stock_ids):
         return {}
     prices = {}
     try:
-        for row in StockMaster.get_quotes_by_ids(stock_ids) or []:
+        quotes = StockMaster.get_quotes_by_ids(stock_ids, owner_user_id=owner_scope())
+        for row in quotes or []:
             if row.get('current_price') is not None:
                 prices[row['id']] = float(row['current_price'])
     except Exception:
@@ -187,7 +191,7 @@ def _current_price(stock_id, snapshot):
 def _stock_total():
     """标的总数，用于区分「还没有任何标的」；查询失败返回 None（不误报空）。"""
     try:
-        _, total = StockMaster.get_all(page=1, per_page=1)
+        _, total = StockMaster.get_all(page=1, per_page=1, owner_user_id=owner_scope())
     except Exception:
         logger.exception('统计标的数量失败')
         return None
@@ -264,6 +268,9 @@ def page():
             logger.exception('加载 AI 页标的失败 stock_id=%s', raw_stock_id)
             flash('加载标的失败，请稍后重试。', 'error')
             stock = None
+    if stock and not can_manage(stock):
+        # 别人的标的：按"未选标的"空态渲染，不报错也不泄露其存在性
+        stock = None
     stock_id = stock['id'] if stock else None
 
     reports = []
@@ -353,7 +360,8 @@ def search():
 
     try:
         rows, total = StockMaster.get_all(page=1, per_page=SEARCH_LIMIT,
-                                          search_query=keyword)
+                                          search_query=keyword,
+                                          owner_user_id=owner_scope())
     except Exception:
         logger.exception('搜索标的失败 keyword=%s', keyword)
         return jsonify({'items': [], 'total': 0, 'truncated': False,

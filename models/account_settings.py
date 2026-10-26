@@ -163,6 +163,57 @@ def resolve_bench_code(default=None):
     return code if code in BENCHMARK_CODES else fallback
 
 
+def prefs_for_user(user_id):
+    """
+    某用户**自己的**通知偏好（2026-10-26 多用户数据隔离）。
+
+    :param user_id: 归属用户 id；为 None 时回退到旧的全局口径（`effective()`），
+                    供无归属的存量订单与每日汇总这类全局场景使用
+    :return: dict，含 NOTIFY_FIELDS 四个键
+    """
+    if user_id is None:
+        return UserNotifyPref.effective()
+
+    row = UserNotifyPref.get(user_id)
+    if not row:
+        # 没存过偏好 = 用默认偏好（三类开、每日汇总关），与该用户在账户页看到的一致
+        return dict(DEFAULT_NOTIFY_PREFS)
+    return {field: 1 if row.get(field) else 0 for field in NOTIFY_FIELDS}
+
+
+def recipients_for_user(user_id):
+    """
+    某订单归属人该收告警邮件的地址（2026-10-26 多用户数据隔离）。
+
+    规则：**谁的票告警就通知谁**——先取该用户自己的邮箱；
+    他没填邮箱时回退环境变量 `ALARM_RECIPIENTS`（运维共享告警箱的场景）。
+
+    :param user_id: 归属用户 id；为 None 时等同于旧的 `resolve_alarm_recipients()`
+    :return: dict(recipients=[...], source='owner_email' | 'env' | '', email=邮箱)
+    """
+    from config import get_alarm_recipients
+
+    if user_id is None:
+        return resolve_alarm_recipients()
+
+    email = ''
+    try:
+        rows = UserNotifyPref.execute_query(
+            "SELECT email FROM users WHERE id = %s", (user_id,))
+    except Exception:
+        logger.exception('查询归属用户邮箱失败 user_id=%s', user_id)
+        rows = None
+    email = ((rows[0].get('email') if rows else None) or '').strip()
+
+    if '@' in email:
+        return {'recipients': [email], 'source': 'owner_email', 'email': email}
+
+    env_recipients = get_alarm_recipients()
+    if env_recipients:
+        return {'recipients': env_recipients, 'source': 'env', 'email': email}
+    return {'recipients': [], 'source': '', 'email': email}
+
+
 def resolve_alarm_recipients():
     """
     生效的告警收件人：环境变量 `ALARM_RECIPIENTS` **优先**，为空时回退到账户邮箱。

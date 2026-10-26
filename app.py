@@ -12,6 +12,7 @@ D-11 修复：日志同时输出到控制台与文件（原来仅在非 debug �
 import logging
 import os
 
+import click
 from flask import Flask, has_request_context, redirect, render_template, request, session, url_for
 
 from config import Config, validate_runtime_settings
@@ -70,8 +71,10 @@ def inject_system_status():
     # `session` 依赖请求上下文：`render_template_string` 只在 app 上下文里跑时不能碰它
     if has_request_context() and session.get('user_id'):
         from models.stock_alarm import StockAlarm
+        from utils.access import owner_scope
 
-        nav_badges['indicator'] = StockAlarm.count_recent_indicator(24)
+        # 徽标也只数自己名下的标的（多用户数据隔离）
+        nav_badges['indicator'] = StockAlarm.count_recent_indicator(24, owner_user_id=owner_scope())
 
     return {
         'system_status': build_system_status(monitor),
@@ -186,6 +189,30 @@ def init_db_command():
         print('数据库初始化成功')
     else:
         print('数据库初始化失败')
+
+
+@app.cli.command('set-admin')
+@click.argument('username')
+def set_admin_command(username):
+    """
+    flask set-admin <username>：把指定用户设为管理员（2026-10-26 多用户数据隔离）。
+
+    管理员能看到全部订单；普通用户只看自己名下。
+    **被提升的用户需要重新登录**——角色在登录时写进 session，改库不会让在线会话自动升级。
+    """
+    from models.user import User
+    from utils.access import ROLE_ADMIN
+
+    user = User.get_by_username(username)
+    if not user:
+        print('用户不存在: %s' % username)
+        raise SystemExit(1)
+
+    if User.set_role(user.id, ROLE_ADMIN):
+        print('已将 %s 设为管理员（该用户需重新登录后生效）' % username)
+    else:
+        print('设置失败，请查看日志')
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

@@ -4,6 +4,7 @@
 import logging
 
 from models.base import BaseModel
+from utils.access import build_owner_where
 from datetime import datetime
 import pymysql
 
@@ -128,24 +129,28 @@ class StockAlarm(BaseModel):
             return []
     
     @classmethod
-    def get_stats(cls):
+    def get_stats(cls, owner_user_id=None):
         """
         告警概览统计（供告警历史页 KPI 使用）。
 
+        :param owner_user_id: 可见范围（多用户数据隔离），见 `utils.access.build_owner_where`
         :return: dict(total, today, last7, mail_sent, mail_failed, mail_skipped)；查询失败返回 None
         """
-        query = """
+        owner_sql, owner_params = build_owner_where(owner_user_id, alias='sm')
+        where = f" WHERE {owner_sql}" if owner_sql else ""
+        query = f"""
         SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN alarm_time >= CURDATE() THEN 1 ELSE 0 END) AS today,
-            SUM(CASE WHEN alarm_time >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS last7,
-            SUM(CASE WHEN notify_status = 'sent' THEN 1 ELSE 0 END) AS mail_sent,
-            SUM(CASE WHEN notify_status = 'failed' THEN 1 ELSE 0 END) AS mail_failed,
-            SUM(CASE WHEN notify_status = 'skipped' THEN 1 ELSE 0 END) AS mail_skipped
-        FROM stock_alarm
+            SUM(CASE WHEN sa.alarm_time >= CURDATE() THEN 1 ELSE 0 END) AS today,
+            SUM(CASE WHEN sa.alarm_time >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS last7,
+            SUM(CASE WHEN sa.notify_status = 'sent' THEN 1 ELSE 0 END) AS mail_sent,
+            SUM(CASE WHEN sa.notify_status = 'failed' THEN 1 ELSE 0 END) AS mail_failed,
+            SUM(CASE WHEN sa.notify_status = 'skipped' THEN 1 ELSE 0 END) AS mail_skipped
+        FROM stock_alarm sa
+        JOIN stock_master sm ON sm.id = sa.stock_master_id{where}
         """
         try:
-            result = cls.execute_query(query)
+            result = cls.execute_query(query, tuple(owner_params) or None)
         except Exception:
             logger.exception('获取告警统计失败')
             return None
@@ -157,7 +162,7 @@ class StockAlarm(BaseModel):
                 ('total', 'today', 'last7', 'mail_sent', 'mail_failed', 'mail_skipped')}
 
     @classmethod
-    def count_recent_indicator(cls, hours=24):
+    def count_recent_indicator(cls, hours=24, owner_user_id=None):
         """
         近 N 小时的「指标」类告警条数（侧栏「指标监控」徽标用）。
 
@@ -165,6 +170,7 @@ class StockAlarm(BaseModel):
         不许退回写死数字——0 条看起来是"没有告警"，写死数字则是假信息。
 
         :param hours: 统计窗口（小时），非法值按 24 处理
+        :param owner_user_id: 可见范围（多用户数据隔离），徽标也只数自己名下的标的
         :return: int；异常返回 0
         """
         try:
@@ -172,12 +178,17 @@ class StockAlarm(BaseModel):
         except (TypeError, ValueError):
             hours = 24
 
-        query = """
-        SELECT COUNT(*) AS total FROM stock_alarm
-        WHERE alarm_type = 'indicator' AND alarm_time >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+        owner_sql, owner_params = build_owner_where(owner_user_id, alias='sm')
+        where = f" AND {owner_sql}" if owner_sql else ""
+        query = f"""
+        SELECT COUNT(*) AS total FROM stock_alarm sa
+        JOIN stock_master sm ON sm.id = sa.stock_master_id
+        WHERE sa.alarm_type = 'indicator'
+          AND sa.alarm_time >= DATE_SUB(NOW(), INTERVAL %s HOUR){where}
         """
+        params = [hours] + list(owner_params)
         try:
-            result = cls.execute_query(query, (hours,))
+            result = cls.execute_query(query, tuple(params))
         except Exception:
             logger.exception('统计近 %s 小时指标告警数失败', hours)
             return 0
@@ -236,65 +247,57 @@ class StockAlarm(BaseModel):
         }
 
     @classmethod
-    def get_all_alarms(cls, page=1, per_page=10, search_query=None, start_date=None, end_date=None):
+    def get_all_alarms(cls, page=1, per_page=10, search_query=None, start_date=None,
+                       end_date=None, owner_user_id=None):
         """
-        获取所有告警记录（支持分页、搜索和日期筛选）
+        获取告警记录（支持分页、搜索、日期筛选与归属过滤）。
+
+        :param owner_user_id: 可见范围（多用户数据隔离），见 `utils.access.build_owner_where`；
+                              告警本身没有归属列，靠 JOIN `stock_master` 继承订单的归属
         """
         offset = (page - 1) * per_page
-        
-        # 构建查询语句
-        query = "SELECT sa.*, sm.stock_name, sm.stock_code FROM stock_alarm sa JOIN stock_master sm ON sa.stock_master_id = sm.id"
-        params = []
-        
-        # 添加WHERE条件
+
+        select_part = ("SELECT sa.*, sm.stock_name, sm.stock_code "
+                       "FROM stock_alarm sa "
+                       "JOIN stock_master sm ON sa.stock_master_id = sm.id")
+        count_part = ("SELECT COUNT(sa.id) as total "
+                      "FROM stock_alarm sa "
+                      "JOIN stock_master sm ON sa.stock_master_id = sm.id")
+
+        # 条件只构造一次：数据查询与 COUNT 查询复用同一套，避免分页总数与列表不一致（D-07）
         where_conditions = []
-        
+        params = []
+
+        owner_sql, owner_params = build_owner_where(owner_user_id, alias='sm')
+        if owner_sql:
+            where_conditions.append(owner_sql)
+            params.extend(owner_params)
+
         if search_query:
-            where_conditions.append("(sa.alarm_text LIKE %s OR sm.stock_name LIKE %s OR sm.stock_code LIKE %s)")
+            where_conditions.append(
+                "(sa.alarm_text LIKE %s OR sm.stock_name LIKE %s OR sm.stock_code LIKE %s)"
+            )
             search_param = f"%{search_query}%"
             params.extend([search_param, search_param, search_param])
-        
+
         if start_date:
             where_conditions.append("sa.alarm_time >= %s")
             params.append(start_date)
-        
+
         if end_date:
             where_conditions.append("sa.alarm_time <= %s")
             params.append(end_date)
-        
-        if where_conditions:
-            query += " WHERE " + " AND ".join(where_conditions)
-        
-        query += " ORDER BY sa.alarm_time DESC LIMIT %s OFFSET %s"
-        params.extend([per_page, offset])
-        
+
+        where_sql = (" WHERE " + " AND ".join(where_conditions)) if where_conditions else ""
+
+        query = select_part + where_sql + " ORDER BY sa.alarm_time DESC LIMIT %s OFFSET %s"
+        list_params = list(params) + [per_page, offset]
+
         try:
-            result = cls.execute_query(query, tuple(params))
-            
-            # 获取总数用于分页
-            count_query = "SELECT COUNT(sa.id) as total FROM stock_alarm sa JOIN stock_master sm ON sa.stock_master_id = sm.id"
-            count_params = []
-            count_where_conditions = []
-            
-            if search_query:
-                count_where_conditions.append("(sa.alarm_text LIKE %s OR sm.stock_name LIKE %s OR sm.stock_code LIKE %s)")
-                search_param = f"%{search_query}%"
-                count_params.extend([search_param, search_param, search_param])
-            
-            if start_date:
-                count_where_conditions.append("sa.alarm_time >= %s")
-                count_params.append(start_date)
-            
-            if end_date:
-                count_where_conditions.append("sa.alarm_time <= %s")
-                count_params.append(end_date)
-            
-            if count_where_conditions:
-                count_query += " WHERE " + " AND ".join(count_where_conditions)
-            
-            count_result = cls.execute_query(count_query, tuple(count_params))
+            result = cls.execute_query(query, tuple(list_params))
+            count_result = cls.execute_query(count_part + where_sql, tuple(params))
             total_count = count_result[0]['total'] if count_result else 0
-            
+
             return result, total_count
         except Exception:
             logger.exception('查询告警记录列表失败')

@@ -459,8 +459,10 @@ class _AiViewSetup:
         # get_all 只用于「标的总数」判定，默认给"至少有一只"，需要空库的用例各自覆盖
         self._patch('StockMaster.get_all',
                     return_value=([{'id': 1, 'stock_name': '测试股', 'stock_code': 'SZ000001'}], 1))
+        # user_id 必带：多用户数据隔离后 AI 页会校验归属，缺失会被当成"别人的标的"
         self._patch('StockMaster.get_by_id',
-                    return_value={'id': 1, 'stock_name': '测试股', 'stock_code': 'SZ000001'})
+                    return_value={'id': 1, 'user_id': 1, 'stock_name': '测试股',
+                                  'stock_code': 'SZ000001'})
         self._patch('StockWarehouse.get_by_stock_master_id', return_value=None)
         self._patch('StockIndicator.get_latest', return_value=None)
         self._patch('StockIndicator.get_latest_batch', return_value={})

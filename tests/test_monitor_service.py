@@ -80,7 +80,7 @@ class SendAlertMailTest(unittest.TestCase):
         self.addCleanup(self.prefs_patcher.stop)
 
     def test_skips_when_no_recipients(self):
-        with mock.patch.object(monitor_module, 'resolve_alarm_recipients',
+        with mock.patch.object(monitor_module, 'recipients_for_user',
                                return_value=_recipients([])):
             with mock.patch.object(monitor_module, 'send_mail') as send:
                 ok = self.monitor._send_alert_mail('s', 'b')
@@ -89,7 +89,7 @@ class SendAlertMailTest(unittest.TestCase):
 
     def test_skips_when_mail_disabled(self):
         self.monitor.config.ALARM_MAIL_ENABLED = False
-        with mock.patch.object(monitor_module, 'resolve_alarm_recipients',
+        with mock.patch.object(monitor_module, 'recipients_for_user',
                                return_value=_recipients(['a@b.com'])):
             with mock.patch.object(monitor_module, 'send_mail') as send:
                 ok = self.monitor._send_alert_mail('s', 'b')
@@ -97,7 +97,7 @@ class SendAlertMailTest(unittest.TestCase):
         send.assert_not_called()
 
     def test_sends_when_recipients_present(self):
-        with mock.patch.object(monitor_module, 'resolve_alarm_recipients',
+        with mock.patch.object(monitor_module, 'recipients_for_user',
                                return_value=_recipients(['a@b.com'])):
             with mock.patch.object(monitor_module, 'send_mail', return_value=True) as send:
                 ok = self.monitor._send_alert_mail('s', 'b')
@@ -107,7 +107,7 @@ class SendAlertMailTest(unittest.TestCase):
     def test_skips_when_notify_pref_disabled(self):
         """账户设置里关掉该类告警 → 仍落库、不发信（2026-10-23 账户设置）。"""
         with mock.patch.object(monitor_module, 'notify_enabled', return_value=False):
-            with mock.patch.object(monitor_module, 'resolve_alarm_recipients',
+            with mock.patch.object(monitor_module, 'recipients_for_user',
                                    return_value=_recipients(['a@b.com'])):
                 with mock.patch.object(monitor_module, 'send_mail') as send:
                     status = self.monitor._send_alert_mail_status(
@@ -139,7 +139,7 @@ class EmitAlarmCooldownTest(unittest.TestCase):
         self.addCleanup(self.mail_patcher.stop)
 
         recipients_patcher = mock.patch.object(
-            monitor_module, 'resolve_alarm_recipients',
+            monitor_module, 'recipients_for_user',
             return_value=_recipients(['a@b.com'])
         )
         recipients_patcher.start()
@@ -210,7 +210,7 @@ class CheckAndAlertTest(unittest.TestCase):
         self.addCleanup(mail_patcher.stop)
 
         recipients_patcher = mock.patch.object(
-            monitor_module, 'resolve_alarm_recipients',
+            monitor_module, 'recipients_for_user',
             return_value=_recipients(['a@b.com'])
         )
         recipients_patcher.start()

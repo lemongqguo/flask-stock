@@ -21,7 +21,7 @@ def _fake_stock(status):
     """必须返回 dict：StockMaster.get_by_id 的真实返回类型是 dict 行，
     不是模型对象。早期这里用 mock.Mock(status=...) ，属性访问在真实路径上会抛
     AttributeError（列表页点击开关 500），问题被 mock 掩盖了。"""
-    return {'id': 1, 'status': status}
+    return {'id': 1, 'status': status, 'user_id': 1}
 
 
 class ToggleStatusTest(unittest.TestCase):

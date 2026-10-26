@@ -23,9 +23,11 @@ from views.stock_orders import (
 )
 
 
-def _stock(id=1, name='测试股', code='SZ000001', alarm_active=0):
+def _stock(id=1, name='测试股', code='SZ000001', alarm_active=0, user_id=1):
+    # user_id 必带：多用户数据隔离后，视图会校验归属，缺失会被当成"别人的订单"
     return {
         'id': id,
+        'user_id': user_id,
         'stock_name': name,
         'stock_code': code,
         'current_price': 61.0,
@@ -177,7 +179,7 @@ class IndicatorPaginationTest(_LoggedInCase):
     LATEST = {i: _indicator(stock_master_id=i) for i in range(1, TOTAL + 1)}
 
     @staticmethod
-    def _fake_get_all(page=1, per_page=10, search_query=None):
+    def _fake_get_all(page=1, per_page=10, search_query=None, owner_user_id=None):
         """按 BaseModel.get_all 的真实语义切片（ORDER BY id DESC 不影响行数断言）。"""
         page = max(1, int(page or 1))
         start = (page - 1) * per_page

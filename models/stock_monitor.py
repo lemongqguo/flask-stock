@@ -21,6 +21,8 @@ from config import Config, XueqiuToken
 from models.account_settings import (
     UserNotifyPref,
     notify_enabled,
+    prefs_for_user,
+    recipients_for_user,
     resolve_alarm_recipients,
     resolve_bench_code,
 )
@@ -98,6 +100,11 @@ class StockMonitor:
         self._bench_code_cached_at = 0.0
         # 每日汇总邮件：每个自然日只发一次
         self._daily_summary_date = None
+        # 同一轮内按股票代码共享外部结果（2026-10-26 方案 A）：
+        # 同一只票被多个用户各持有一条时，不应对雪球重复请求
+        self._round_lock = threading.Lock()
+        self._round_cache = {'quote': {}, 'kline': {}}
+        self._round_pending = {}
         self.stats = {
             'rounds': 0,
             'checks': 0,
@@ -265,6 +272,61 @@ class StockMonitor:
         return (self.config.MONITOR_OFF_HOURS_FETCH_MIN_DELAY,
                 self.config.MONITOR_OFF_HOURS_FETCH_MAX_DELAY)
 
+    def _reset_round_cache(self):
+        """
+        每轮开始时清空共享结果。
+
+        **必须每轮清**：缓存的是实时行情与当日 K 线，跨轮复用会让我们拿昨天的价格去判告警。
+        """
+        with self._round_lock:
+            self._round_cache = {'quote': {}, 'kline': {}}
+            self._round_pending = {}
+
+    def _shared_result(self, kind, stock_code, producer):
+        """
+        本轮内按股票代码共享外部结果：同一代码的并发任务只有第一个真正去请求，
+        其余等待并复用。
+
+        为什么必须有：2026-10-26 起同一代码可被多个用户各持有一条，
+        不共享就会对同一个代码打出 N 次雪球请求，外部请求量随用户数线性增长。
+
+        :param kind: 'quote'（行情快照）或 'kline'（日线）
+        :param producer: 真正发起外部请求的 Callable
+        :return: 结果；失败返回 None。**失败不缓存**——否则一次超时会连坐同代码的其他订单
+        """
+        key = (kind, stock_code)
+
+        with self._round_lock:
+            cached = self._round_cache.get(kind) or {}
+            if stock_code in cached:
+                return cached[stock_code]
+            waiter = self._round_pending.get(key)
+            if waiter is None:
+                self._round_pending[key] = waiter = threading.Event()
+                owner = True
+            else:
+                owner = False
+
+        if not owner:
+            # 首个请求者还在节流/网络等待里，等它拿回来复用即可（比重复请求省一次调用）
+            waiter.wait()
+            with self._round_lock:
+                return (self._round_cache.get(kind) or {}).get(stock_code)
+
+        try:
+            value = producer()
+        finally:
+            # 无论成败都要放行等待者，否则一次异常会把同伴永久挂住
+            with self._round_lock:
+                self._round_pending.pop(key, None)
+            waiter.set()
+
+        if value is None:
+            return None
+        with self._round_lock:
+            self._round_cache.setdefault(kind, {})[stock_code] = value
+        return value
+
     def get_stock_data(self, stock_code):
         """
         从雪球获取单只股票的行情快照。
@@ -315,20 +377,23 @@ class StockMonitor:
     # ------------------------------------------------------------------
     # 告警
     # ------------------------------------------------------------------
-    def _send_alert_mail_status(self, subject, body, alarm_type=None):
+    def _send_alert_mail_status(self, subject, body, alarm_type=None, owner_user_id=None):
         """
         发送告警邮件并返回通知状态。
 
         跳过（skipped）的三种情形，都明确记日志而非静默失败：
         - 该类告警的通知开关被关掉（账户设置 → 告警通知；告警**仍然落库**，只是不发信）；
         - 邮件总开关 `ALARM_MAIL_ENABLED=0`；
-        - 解析不到收件人（环境变量为空且账户邮箱也未设置）。
+        - 解析不到收件人（归属人邮箱为空且环境变量也未设置）。
         发送抛异常时记日志并返回 failed，不向上抛，避免打断监控主循环。
 
         :param alarm_type: 告警类型（ALARM_TYPE_*）；为 None 表示不受分类开关约束（如每日汇总）
+        :param owner_user_id: **订单归属人** id（2026-10-26 多用户数据隔离）：
+                              谁的票告警就按谁的开关与邮箱发。为 None（如每日汇总、
+                              老数据无归属）时沿用旧的全局口径
         :return: NOTIFY_SENT / NOTIFY_FAILED / NOTIFY_SKIPPED
         """
-        if alarm_type is not None and not notify_enabled(alarm_type):
+        if alarm_type is not None and not notify_enabled(alarm_type, prefs_for_user(owner_user_id)):
             logger.info('通知偏好已关闭该类告警邮件（%s），跳过: %s', alarm_type, subject)
             return NOTIFY_SKIPPED
 
@@ -336,7 +401,7 @@ class StockMonitor:
             logger.info('邮件告警已关闭（ALARM_MAIL_ENABLED=0），跳过: %s', subject)
             return NOTIFY_SKIPPED
 
-        recipients = resolve_alarm_recipients()['recipients']
+        recipients = recipients_for_user(owner_user_id)['recipients']
         if not recipients:
             logger.warning('未解析到告警收件人（ALARM_RECIPIENTS 为空且账户邮箱未设置），'
                            '跳过邮件发送: %s', subject)
@@ -381,7 +446,12 @@ class StockMonitor:
             alarm_subtype=alarm_subtype,
             alarm_level=alarm_level,
         )
-        status = self._send_alert_mail_status(subject, body, alarm_type=alarm_type)
+        # 告警邮件按**订单归属人**发（多用户数据隔离）；
+        # 归属缺失（存量数据）时 getattr 返回 None，自动回退到旧的全局口径
+        status = self._send_alert_mail_status(
+            subject, body, alarm_type=alarm_type,
+            owner_user_id=getattr(stock, 'user_id', None),
+        )
         StockAlarm.update_notify_status(alarm_id, status)
         return True
 
@@ -685,7 +755,11 @@ class StockMonitor:
         self.stats['checks'] += 1
 
         try:
-            stock_data = self.get_stock_data(stock.stock_code)
+            # 同一代码被多人持有时会产出多行订单，本轮只真正取一次行情
+            stock_data = self._shared_result(
+                'quote', stock.stock_code,
+                lambda: self.get_stock_data(stock.stock_code),
+            )
         except Exception:
             self.stats['errors'] += 1
             logger.exception('获取行情时发生未预期错误 stock=%s', stock.stock_code)
@@ -727,7 +801,11 @@ class StockMonitor:
         if self._xueqiu_backoff_remaining() > 0:
             return
         try:
-            kline_df = StockKline.get_kline_data_from_snowball(stock.stock_code, days=40)
+            # 与行情同理：同一代码的 K 线本轮只拉一次
+            kline_df = self._shared_result(
+                'kline', stock.stock_code,
+                lambda: StockKline.get_kline_data_from_snowball(stock.stock_code, days=40),
+            )
             if kline_df is None or len(kline_df) == 0:
                 logger.warning('未获取到 K 线数据 stock=%s', stock.stock_code)
                 return
@@ -785,6 +863,8 @@ class StockMonitor:
             status=row.get('status'),
             created_at=row.get('created_at'),
             updated_at=row.get('updated_at'),
+            # 归属人：告警邮件要发给谁、按谁的开关决定
+            user_id=row.get('user_id'),
         )
 
     def monitor_loop(self):
@@ -820,6 +900,8 @@ class StockMonitor:
 
             try:
                 stocks = StockMaster.get_active_stocks(limit=self.config.MONITOR_MAX_STOCKS)
+                # 每轮清空共享缓存：跨轮复用会拿昨天的行情去判今天的告警
+                self._reset_round_cache()
                 if not stocks:
                     logger.debug('没有活跃订单，休眠 %ss', self.config.MONITOR_ERROR_SLEEP)
                     if self._sleep(self.config.MONITOR_ERROR_SLEEP):

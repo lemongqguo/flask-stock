@@ -6,6 +6,7 @@ import logging
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from models.base import BaseModel
+from utils.access import ROLE_ADMIN, ROLE_USER
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,8 @@ class User(BaseModel):
     search_fields = ['username', 'email']
 
     def __init__(self, id=None, username=None, password_hash=None, email=None, created_at=None,
-                 phone=None, bench_code=None, last_login=None, updated_at=None):
+                 phone=None, bench_code=None, last_login=None, updated_at=None,
+                 role=ROLE_USER):
         self.id = id
         self.username = username
         self.password_hash = password_hash
@@ -29,6 +31,38 @@ class User(BaseModel):
         self.bench_code = bench_code
         self.last_login = last_login
         self.updated_at = updated_at
+        # 角色（2026-10-26 多用户数据隔离）：admin 看全部订单，user 只看自己名下
+        self.role = role
+
+    @classmethod
+    def count_users(cls):
+        """:return: 用户总数；查询失败返回 None（由调用方决定如何兜底）。"""
+        try:
+            rows = cls.execute_query("SELECT COUNT(*) AS total FROM users")
+        except Exception:
+            logger.exception('统计用户数失败')
+            return None
+        if not rows:
+            return 0
+        return int(rows[0].get('total') or 0)
+
+    @classmethod
+    def set_role(cls, user_id, role):
+        """
+        设置用户角色（供 `flask set-admin` CLI 使用）。
+
+        :return: True 表示更新到行
+        """
+        if role not in (ROLE_USER, ROLE_ADMIN):
+            logger.warning('拒绝设置非法角色 user_id=%s role=%r', user_id, role)
+            return False
+        try:
+            return cls.execute_update(
+                "UPDATE users SET role = %s WHERE id = %s", (role, user_id)
+            ) > 0
+        except Exception:
+            logger.exception('设置用户角色失败 user_id=%s', user_id)
+            return False
 
     def set_password(self, password):
         """
@@ -63,9 +97,14 @@ class User(BaseModel):
 
         user = cls()
         user.set_password(password)
+        # 全库第一个注册的用户自动成为管理员：否则全新部署里没有任何管理员，
+        # 而普通用户只看自己名下，会出现"所有订单谁也看不见"的死局。
+        # count_users() 查询失败返回 None → 按普通用户处理（不给特权）
+        user.role = ROLE_ADMIN if cls.count_users() == 0 else ROLE_USER
 
-        query = "INSERT INTO users (username, password_hash, email) VALUES (%s, %s, %s)"
-        params = (username, user.password_hash, email)
+        query = ("INSERT INTO users (username, password_hash, email, role) "
+                 "VALUES (%s, %s, %s, %s)")
+        params = (username, user.password_hash, email, user.role)
 
         try:
             result = cls.execute_update(query, params)
@@ -109,6 +148,7 @@ class User(BaseModel):
             bench_code=row.get('bench_code'),
             last_login=row.get('last_login'),
             updated_at=row.get('updated_at'),
+            role=row.get('role') or ROLE_USER,
         )
 
     @classmethod

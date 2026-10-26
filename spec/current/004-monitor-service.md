@@ -1,11 +1,12 @@
 # 004 后台监控服务（StockMonitor）
 
-**状态**：已实现　|　**最后更新**：2026-10-21
+**状态**：已实现　|　**最后更新**：2026-10-26
 **实现**：`models/stock_monitor.py`、`utils/mail_sender.py`、`utils/trading_time.py`、`utils/alarm_rules.py`、`utils/alarm_throttle.py`、`utils/snowball_errors.py`、`utils/logging_config.py`、`app.py`、`config.py`
 **相关变更**：
 [2026-10-21 M1 缺陷治理](../changes/2026-10-21-m1-defect-hardening.md)（D-01~D-12）、
 [2026-10-21 雪球接口错误降级](../changes/2026-10-21-xueqiu-error-handling.md)（D-13）、
-[2026-10-21 优雅退出](../changes/2026-10-21-graceful-shutdown.md)（D-14）
+[2026-10-21 优雅退出](../changes/2026-10-21-graceful-shutdown.md)（D-14）、
+[2026-10-26 多用户数据隔离](../archive/changes/2026-10-26-multi-user-ownership.md)（本轮结果共享 + 收件人按归属人）
 
 ---
 
@@ -46,7 +47,8 @@
 
 1. 每日汇总邮件（默认 08:30，通常在非交易时段）→ 与时段无关，先处理；
 2. 雪球退避期内（`xueqiu_backoff_remaining > 0`）→ **整轮跳过**，休眠后继续；
-3. `StockMaster.get_active_stocks(limit=MONITOR_MAX_STOCKS)` 取活跃订单；
+3. `StockMaster.get_active_stocks(limit=MONITOR_MAX_STOCKS)` 取活跃订单——**刻意不加归属过滤**，
+   监控必须照看所有人的订单；取完之后立刻 `_reset_round_cache()` 清空本轮共享缓存；
 4. 无活跃订单 → `_sleep(MONITOR_ERROR_SLEEP)`；
 5. 有 → `ThreadPoolExecutor` 并发跑 `check_and_alert`（**交易 / 非交易时段同一条链路**）；
 6. 轮结束后按当前时段休眠：交易时段 `MONITOR_ROUND_INTERVAL`（默认 0）、
@@ -60,10 +62,15 @@
 ### 3.3 单次检查 `check_and_alert`
 
 1. `get_stock_data`：随机节流 → `ball.set_token(token)` → `ball.quote_detail(stock_code)`，返回 current / pe_ttm / pb / dividend_yield / name；无 Token 或格式异常返回 `None` 并记日志。
-2. 回写 `StockMaster.update(current_pe, current_pb)` 与 `stock_warehouse.current_price`。
+   **经 `_shared_result('quote', stock_code, ...)` 取数**（2026-10-26）：本轮同一 `stock_code` 只真正请求一次，
+   后到的同代码订单等待并复用结果。理由见 [ADR-005](../decisions/005-per-user-stock-code-uniqueness.md)——
+   同一代码可被多个用户各持有一条，不去重就会对雪球打出 N 次请求。
+2. 回写 `StockMaster.update(current_pe, current_pb)` 与 `stock_warehouse.current_price`（**每个订单各写各的**，不共享）。
 3. 拉 K 线并落库（`days=40`），失败只记日志不影响告警，见 [005](./005-kline-signal.md)。
+   与行情同理，走 `_shared_result('kline', stock_code, ...)` 本轮只拉一次。
 4. 依次判定：卖出 → 建仓三档 → PE 三档 → PB 三档（判定细节见 [003](./003-alarm-thresholds.md)）。
 5. 告警统一走 `_emit_alarm`：冷却检查 → `StockAlarm.create` → 发邮件。
+   **邮件按订单归属人发**：`owner_user_id` 取该订单的 `user_id`，决定收件人与通知开关（见 [003](./003-alarm-thresholds.md) §3.6）。
 6. 各步骤独立 `try/except`，异常只累加 `stats['errors']` 并记日志，不向上抛。
 
 ### 3.4 邮件发送 `utils/mail_sender.py`
@@ -142,5 +149,11 @@
 - **Token 更新后需重启进程**才会立即恢复（否则等 `XUEQIU_BACKOFF_SECONDS` 退避自然结束）。
 - **Token 失效不会主动通知管理员**（仅本地日志提示）；如需邮件/钉钉告警请另立变更。
 - 雪球错误码清单来自已知样本，未公开完整码表；未知业务码按"提示 + 不退避"处理。
-- **冷却 key 不区分用户**：所有订单告警对全体用户可见，属既定设计。
+- **本轮结果共享的边界**（2026-10-26）：同一 `stock_code` 本轮只取一次行情与 K 线，
+  但**写库仍然是每个订单各写各的**，所以同一只票被 N 人持有仍会有 N 份 `stock_kline`。
+  **失败不缓存**，但"谁先去取"的那次失败会让同代码的其他订单本轮也拿不到数据（单点失败放大一轮）；
+  考虑到同一代码的请求要么都成功要么都失败，判定可接受。
+- **等待者会占用线程池槽位**：同代码的第二个任务是阻塞等待而非退回，期间占住一个 worker。
+  若将来同一代码被几十人持有，需要重新评估 `MONITOR_MAX_WORKERS`。
+- **每日汇总邮件仍是全局口径**：不按归属人拆分，见 [003](./003-alarm-thresholds.md) §5。
 - `logs/` 目录需要进程有写权限；不可写时降级为仅控制台输出并记 warning。

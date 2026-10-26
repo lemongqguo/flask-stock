@@ -37,8 +37,10 @@ class RefreshScopedToPageTest(unittest.TestCase):
         with self.client.session_transaction() as sess:
             sess['user_id'] = 1
             sess['username'] = 'smoke'
-        # 取两个真实订单 id
-        rows = StockMaster.get_all_with_details(page=1, per_page=5)[0]
+        # 取当前用户**自己的**两个订单 id（2026-10-26 多用户隔离后必须带 owner_user_id）：
+        # 不带该参数是管理员全量视角，会取到别人名下的 id，而 refresh_quotes 会按归属
+        # 静默丢弃不属于本用户的 id，断言就会少一条。
+        rows = StockMaster.get_all_with_details(page=1, per_page=5, owner_user_id=1)[0]
         self.rows = rows
         self.ids = [r['id'] for r in rows[:2]]
 

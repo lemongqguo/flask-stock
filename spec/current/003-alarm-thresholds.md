@@ -1,6 +1,6 @@
 # 003 告警阈值与告警历史（Alarm Thresholds & History）
 
-**状态**：已实现　|　**最后更新**：2026-10-23
+**状态**：已实现　|　**最后更新**：2026-10-26
 **实现**：`views/stock_orders.py`、`models/stock_pe.py`、`models/stock_pb.py`、`models/stock_warehouse.py`、`models/stock_alarm.py`、`utils/alarm_rules.py`、`utils/alarm_throttle.py`、`database.py`
 **相关变更**：[2026-10-21 M1 缺陷治理](../changes/2026-10-21-m1-defect-hardening.md)（已修复 D-03 冷却、D-09 索引）、
 [2026-10-21 告警表补齐类型字段](../changes/2026-10-21-alarm-type-fields.md)（新增 3.5 节）、
@@ -57,6 +57,9 @@
 - 分页展示，支持关键字搜索与起止日期筛选。
 - 结果按 `alarm_time DESC` 排序。
 - `stock_alarm` 表已建索引 `idx_alarm_time(alarm_time)` 与 `idx_stock_alarm(stock_master_id, alarm_time)`；`database.py` 对存量库做幂等补索引迁移。
+- **按归属可见**（2026-10-26）：`stock_alarm` 自身没有归属列，靠 `JOIN stock_master` 继承订单的 `user_id`。
+  普通用户只见自己订单产生的告警，**KPI `get_stats()` 与列表同口径**过滤；管理员见全量。
+  侧栏「指标监控」徽标（`count_recent_indicator`）同样按归属计数。
 
 ### 3.5 告警类型与通知状态
 
@@ -84,6 +87,11 @@
   且 `skipped` 不计入「发送失败」统计（失败只统计 `failed`）。
 - 收件人解析 `resolve_alarm_recipients()`：环境变量 `ALARM_RECIPIENTS` 优先，为空时回退到账户邮箱；
   **页面展示与发信调用同一个函数**，不存在"页面写 A、邮件发到 B"。
+  这条是**全局口径**的收件人，仅用于"没有归属人"的场景（如每日汇总、监控的兜底分支）。
+- **按订单归属人收件**（2026-10-26）：告警邮件先取**订单归属人**的邮箱（`recipients_for_user(user_id)`），
+  并套用**该用户自己**的通知开关（`prefs_for_user(user_id)`）——谁的票触发就通知谁、按谁的开关决定发不发。
+  归属人没填邮箱时回退环境变量 `ALARM_RECIPIENTS`；归属缺失（存量数据）时走上面的全局口径。
+  仍有**一个例外**：**每日汇总邮件**不做逐用户拆分，**保持全局口径**，见 §5 已知限制。
 - **每日汇总邮件**：开关打开后，每天在 `DAILY_SUMMARY_TIME`（默认 `08:30`，配置见 `.env.example`）之后发一次，
   内容为近 24 小时告警（分类型计数 + 最近 8 条）；无告警不发空邮件；成败都只尝试一轮，状态记在 `stats['daily_summary']`。
 
@@ -102,6 +110,9 @@
 11. 存量告警在 `init_database()` 时按文本回填类型，无法识别的落 `unknown`；重复执行安全。
 12. 指标类自 2026-10-23 起按 `combo` 单键冷却：四项指标的 AND 组合成立才写一条告警；
     单条（如仅 52 周回撤达 35%）不再单独告警（回归用例 `tests/test_indicator_collect.py`、`tests/test_indicator_rules.py`）。
+13. 告警历史与 KPI 按订单归属过滤：普通用户只见自己订单的告警，admin 见全量
+    （回归用例 `tests/test_multi_user_ownership.py`）。
+14. 告警邮件发给**订单归属人**，并按该用户自己的通知开关决定是否发送。
 
 ## 5. 已知限制
 
@@ -110,4 +121,7 @@
 - **冷却粒度到档位**：价格从第二档继续跌到第三档会各自告警一次，属预期行为；同一档位反复穿越则受冷却约束。
 - 阈值设置未做档位间大小关系的合法性校验（例如三档价可以填得比一档高）。
 - **负 PE 会命中档位**：亏损公司 `pe_ttm` 为负且必然小于正阈值，会产生 PE 告警；当前未做"负值不告警"的过滤（已由 `tests/test_alarm_rules.py` 锁定该行为，待产品决策）。
-- 告警不区分用户，所有订单告警对全体可见。
+- **告警历史已按归属隔离**（2026-10-26 起），不再全体可见；仍有两个残留：
+  - **每日汇总邮件是全局口径**（见 §3.6）：汇总所有用户近 24h 告警后发到全局收件人。
+    若有人开启「每日汇总」，会先把这里改造成逐用户发送，否则就是跨用户泄露。
+  - 告警记录本身没有独立的归属列，删除归属订单会连带删掉告警（`stock_alarm` → `stock_master` 级联）。

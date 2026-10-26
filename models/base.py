@@ -6,6 +6,7 @@ import logging
 import pymysql
 
 from database import get_connection
+from utils.access import and_where, build_owner_where
 
 logger = logging.getLogger(__name__)
 
@@ -119,17 +120,23 @@ class BaseModel:
         return result[0] if result else None
 
     @classmethod
-    def get_all(cls, page=1, per_page=10, search_query=None):
+    def get_all(cls, page=1, per_page=10, search_query=None, owner_user_id=None):
         """
-        分页查询记录列表，支持关键字搜索。
+        分页查询记录列表，支持关键字搜索与归属过滤。
 
+        :param owner_user_id: 多用户数据隔离（2026-10-26）的可见范围，
+                              取值语义见 `utils.access.build_owner_where`：
+                              `None` = 全量（管理员），`int` = 仅该用户，`NO_ACCESS` = 空集。
         :return: (当前页记录列表, 总记录数)
         """
         page = max(1, int(page or 1))
         per_page = max(1, int(per_page or 10))
         offset = (page - 1) * per_page
 
-        where_sql, search_params = cls.build_search_where(search_query)
+        where_sql, where_params = and_where(
+            build_owner_where(owner_user_id, alias=cls.table_name),
+            cls.build_search_where(search_query),
+        )
 
         query = f"SELECT * FROM {cls.table_name}"
         count_query = f"SELECT COUNT(*) as total FROM {cls.table_name}"
@@ -137,13 +144,14 @@ class BaseModel:
             query += f" WHERE {where_sql}"
             count_query += f" WHERE {where_sql}"
 
-        params = list(search_params)
+        params = list(where_params)
         query += " ORDER BY id DESC LIMIT %s OFFSET %s"
         params.extend([per_page, offset])
 
         try:
             result = cls.execute_query(query, tuple(params))
-            count_result = cls.execute_query(count_query, tuple(search_params))
+            # 数据查询与 COUNT 查询必须复用同一套条件，否则分页总数会与列表对不上（D-07）
+            count_result = cls.execute_query(count_query, tuple(where_params))
             total_count = count_result[0]['total'] if count_result else 0
             return result, total_count
         except Exception:

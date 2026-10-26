@@ -76,6 +76,9 @@ def login():
         if user:
             session['user_id'] = user.id
             session['username'] = user.username
+            # 角色写进 session（2026-10-26 多用户数据隔离）：后续请求不必再查 users 表。
+            # 代价：管理员被降/升时需要重新登录才生效，已写入 001 规格。
+            session['role'] = user.role
             # 最后登录时间：失败不影响登录（账户页只会显示"未知"）
             User.touch_login(user.id)
 
@@ -94,6 +97,7 @@ def logout():
     """用户登出。"""
     session.pop('user_id', None)
     session.pop('username', None)
+    session.pop('role', None)
     flash('您已成功登出。', 'info')
     return redirect(url_for('auth.login'))
 

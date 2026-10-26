@@ -194,15 +194,17 @@ flask-stock/
 | id | INT | 主键，自增 |
 | username | VARCHAR(80) | 用户名，唯一 |
 | password_hash | VARCHAR(120) | 密码哈希 |
-| email | VARCHAR(120) | 邮箱 |
+| email | VARCHAR(120) | 邮箱（告警邮件按订单归属人发，取的就是这一列） |
+| role | ENUM('user','admin') | 角色（2026-10-26 新增）。`admin` 见全量订单，`user` 只见自己名下；首个注册用户自动为 admin |
 | created_at | TIMESTAMP | 创建时间 |
 
 #### stock_master (主订单表)
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INT | 主键，自增 |
+| user_id | INT | **归属用户**（2026-10-26 新增），外键 `users(id) ON DELETE RESTRICT`。下游子表靠 `stock_master_id` 继承归属 |
 | stock_name | VARCHAR(100) | 股票名称 |
-| stock_code | VARCHAR(20) | 股票代码，唯一 (如 SZ002027) |
+| stock_code | VARCHAR(20) | 股票代码 (如 SZ002027)。**不再全局唯一**，唯一键为 `uk_user_code(user_id, stock_code)`，同一代码可被不同用户各持有一条 |
 | target_pettm | DECIMAL(10,2) | 目标PE-TTM |
 | current_pe | DECIMAL(10,2) | 当前PE |
 | target_pb | DECIMAL(10,2) | 目标PB |
@@ -210,6 +212,10 @@ flask-stock/
 | status | ENUM | 状态 (active/inactive) |
 | created_at | TIMESTAMP | 创建时间 |
 | updated_at | TIMESTAMP | 更新时间 |
+
+索引：`idx_stock_owner(user_id)`、唯一键 `uk_user_code(user_id, stock_code)`、
+外键 `fk_stock_master_user(user_id) REFERENCES users(id) ON DELETE RESTRICT`
+（`idx_stock_name` / `idx_stock_code` 仍在，供搜索用）。
 
 #### stock_warehouse (仓库/持仓表)
 | 字段 | 类型 | 说明 |
@@ -349,12 +355,13 @@ flask-stock/
 ### 3.2 表关系图
 ```
 ┌─────────────┐
-│   users     │
-└─────────────┘
-
+│   users     │  role: user / admin
+└──────┬──────┘
+       │ user_id（归属，RESTRICT：不允许因删用户清空订单）
+       ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      stock_master                            │
-│                         (主订单)                             │
+│                    (主订单 · 归属某人)                        │
 └─────────────────────────────────────────────────────────────┘
          │           │           │           │           │
          ▼           ▼           ▼           ▼           ▼

@@ -1,7 +1,8 @@
 # 001 用户认证（User Authentication）
 
-**状态**：已实现　|　**最后更新**：2026-10-21　|　**实现**：`views/auth.py`、`models/user.py`、`utils/decorators.py`、`app.py`
-**相关变更**：[2026-10-21 M1 缺陷治理](../changes/2026-10-21-m1-defect-hardening.md)（已修复 D-10 死代码、D-12 过期 API）
+**状态**：已实现　|　**最后更新**：2026-10-26　|　**实现**：`views/auth.py`、`models/user.py`、`utils/decorators.py`、`utils/access.py`、`app.py`
+**相关变更**：[2026-10-21 M1 缺陷治理](../changes/2026-10-21-m1-defect-hardening.md)（已修复 D-10 死代码、D-12 过期 API）、
+[2026-10-26 多用户数据隔离](../archive/changes/2026-10-26-multi-user-ownership.md)（新增角色与数据归属）
 
 ---
 
@@ -14,9 +15,11 @@
 
 | 术语 | 含义 |
 | --- | --- |
-| session 会话 | Flask 服务端 session，登录成功后写入 `session['user_id']`、`session['username']` |
+| session 会话 | Flask 服务端 session，登录成功后写入 `session['user_id']`、`session['username']`、`session['role']` |
 | 白名单端点 | `auth.login`、`auth.register`、`static`，未登录也可访问 |
 | 密码哈希 | Werkzeug `generate_password_hash` / `check_password_hash`，**不存明文** |
+| 角色 `users.role` | `ENUM('user','admin')`，默认 `user`。决定数据可见范围：admin 见全量，user 仅自己名下 |
+| 归属 `stock_master.user_id` | 订单归属用户，**由服务端从 session 取**，不接受客户端传值 |
 
 ## 3. 当前有效行为
 
@@ -61,6 +64,24 @@
 - 写库由模型层 `User.update_password(user_id, new_password)` 完成，**视图层不再直接执行 SQL**。
 - 与设计稿一致：密码表单与个人资料**同一张卡片内**，失败回到同页并保留资料内容。
 
+### 3.7 角色与数据归属（2026-10-26）
+
+多用户数据隔离的完整约定在 [002](./002-stock-order.md) §3.7；本节只写**认证侧**的部分。
+
+- **角色来源**：`users.role`，`ENUM('user','admin') NOT NULL DEFAULT 'user'`。
+  admin 能看到**全部**订单；user 只看自己名下（`stock_master.user_id` 等于自己）。
+- **首个用户自动为 admin**：`User.create()` 在全库尚无用户时把新用户置为 `admin`，
+  避免全新部署出现「没有管理员，而普通用户又只看自己名下」导致订单谁也看不见的死局。
+- **管理员谋求与管理**：
+  - `database._ensure_first_admin()`：存量库启动时把 `id` 最小的用户提升为 admin（只在**全库无 admin** 时执行）；
+  - `flask set-admin <username>` CLI (`app.py`)：事后提升。
+- **角色写进 session**：登录时写 `session['role']`，后续请求不再查 `users` 表。
+  **代价：角色变更后必须重新登录才生效**（在线会话不会自动升级/降级）。
+- **判定入口唯一**：`utils/access.py` 提供 `owner_scope()` / `can_manage()` / `build_owner_where()`，
+  各视图与模型**只调用、不自己拼 `WHERE user_id =`**。
+- **失败关闭**：会话不完整 → `owner_scope()` 返回哨兵 `NO_ACCESS`，查询生成 `1 = 0`（空集），
+  绝不退化成"全量"。
+
 ## 4. 验收条件
 
 1. 未登录访问 `/stock/list` → 302 到登录页。
@@ -73,12 +94,18 @@
 8. 保存资料后重新进入 `/profile`，用户名 / 邮箱 / 手机号 / 基准指数与四个开关都保持已保存的值
    （回归用例 `tests/test_account_profile.py`）。
 9. 用户名与他人重名 / 邮箱不含 `@` / 基准填了白名单外的代码 → 页面报错且**不落库**。
+10. 全库第一个注册的用户 `role='admin'`；之后注册的为 `user`（回归用例 `tests/test_multi_user_ownership.py::UserRoleTest`）。
+11. 登录后 session 中带有 `role`；登出后被清除。
+12. 会话缺失 `user_id` 时 `owner_scope()` 返回 `NO_ACCESS`，相关查询返回空集而不是全量。
 
 ## 5. 已知限制
 
 - **无密码复杂度要求**（只校验长度 ≥ 6），无注册验证码与登录频率限制。
 - **无 CSRF 防护**：`requirements.txt` 引入了 Flask-WTF，但全项目未启用 CSRF Token，所有 POST 表单裸奔。
-- **无权限体系**：`admin_required`/`permission_required` 已作为死代码删除（依赖 User 表不存在的 `role`/`permissions` 字段）。当前为单角色内网工具，如需权限管理须另立变更：先加字段、再补装饰器。
+- **权限粒度只有一层**：只有 `user` / `admin` 两种角色，没有细粒度授权（如"只看某个分组"）。
+  需要更多角色时应另立变更扩展 `users.role` 枚举与 `utils/access.py`，而不是在各视图里写死判断。
+- **角色变更需重新登录**：角色在登录时写入 session，在库里改角色不会影响已登录会话。
+- **仍有 CSRF 缺口**（见上一节），admin 账号同样受影响。
 - 无"记住我"、无登录失败锁定、无审计日志。
 - **基准指数的雪球符号未经联网实测**：当前环境 Token 失效（`400016`），`SH000001` / `SH000300` /
   `SZ399006` / `HKHSI` 四个符号只能在使用时由「最新交易日」是否为空来暴露采集是否成功（页面已显式展示）。
