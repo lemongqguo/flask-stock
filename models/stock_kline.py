@@ -106,7 +106,7 @@ class StockKline(BaseModel):
             return 'normal'
     
     @classmethod
-    def save_kline_data(cls, stock_master_id, stock_code, kline_df):
+    def save_kline_data(cls, stock_master_id, stock_code, kline_df, stock_name):
         """
         保存K线数据到数据库
         
@@ -114,6 +114,7 @@ class StockKline(BaseModel):
             stock_master_id: 股票主表ID
             stock_code: 股票代码
             kline_df: K线数据DataFrame
+            stock_name: 股票名称（可选）
         
         返回:
             成功保存的记录数
@@ -183,10 +184,12 @@ class StockKline(BaseModel):
                 
                 saved_count += 1
             
-            logger.info(f"成功保存 {saved_count} 条K线数据，股票代码: {stock_code}")
+            logger.info('成功保存 %s 条K线数据-股票: %s(%s)',
+                        saved_count, stock_name or '-', stock_code)
+
             return saved_count
         except Exception:
-            logger.exception('保存K线数据失败 %s', stock_code)
+            logger.exception('保存K线数据失败-股票：%s(%s)', stock_name or '-', stock_code)
             return 0
     
     @classmethod
