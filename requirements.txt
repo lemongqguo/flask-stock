@@ -1,11 +1,17 @@
+# 生产依赖清单。
+#
+# 版本组合以项目内的虚拟环境 stockvenv（Python 3.12）为准并已实测可用；
+# 2026-10-27 将 numpy / pandas 由 1.24.3 / 2.0.3 对齐到这里实际安装的版本——
+# 旧组合是为 Python 3.9 锁的，在 3.12 上根本装不上（numpy 1.24.3 无 cp312 wheel，需源码编译）。
+# 基准镜像也随之由 python:3.9-slim 升到 python:3.12-slim，见 Dockerfile。
 Flask==2.3.3
 Flask-WTF==1.1.1
 PyMySQL==1.1.0
 DBUtils==3.1.2
 Werkzeug==2.3.7
 requests==2.31.0
-numpy==1.24.3
-pandas==2.0.3
+numpy==2.5.4
+pandas==3.1.0
 pysnowball==0.1.8
 python-dotenv==1.2.4
 gunicorn==26.2.0

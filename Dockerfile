@@ -1,5 +1,6 @@
 # 使用官方Python运行时作为基础镜像
-FROM python:3.9-slim
+# 3.12：与本机虚拟环境 stockvenv 一致；旧版 3.9 装不上 requirements.txt 里的 numpy 2.x / pandas 3.x
+FROM python:3.12-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -36,15 +37,17 @@ USER app
 # 至少需要：MYSQL_HOST MYSQL_PORT MYSQL_USER MYSQL_PASSWORD MYSQL_DATABASE
 #           SECRET_KEY XUEQIU_TOKEN MAIL_USERNAME MAIL_PASSWORD ALARM_RECIPIENTS
 # 完整清单见 .env.example
+# 日志同时由应用落盘到 /app/logs/（见 utils/logging_config.py）
 ENV FLASK_DEBUG=0 \
     FLASK_HOST=0.0.0.0 \
     FLASK_PORT=5000 \
     MONITOR_ENABLED=1 \
-    LOG_LEVEL=INFO
+    LOG_LEVEL=INFO \
+    USE_GUNICORN=1
 
-# 暴露端口
+# 暴露端口（与 gunicorn.conf.py 的默认 bind 一致）
 EXPOSE 5000
 
-# 运行应用
-CMD ["/bin/sh", "-c", "/app/start.sh >> /app/logs/stdout/flask-stock.stdout 2>&1"]
+# 运行应用：不再把 stdout 重定向到文件，日志直接进容器输出，可用 docker logs 查看
+CMD ["/bin/sh", "-c", "mkdir -p /app/logs && exec /app/start.sh"]
 

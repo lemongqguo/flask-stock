@@ -360,7 +360,7 @@ class StockMonitor:
                 return None
 
             quote = data['data']['quote']
-            return {
+            stock_data = {
                 'current': quote.get('current'),
                 'pe_ttm': quote.get('pe_ttm'),
                 'pb': quote.get('pb'),
@@ -370,6 +370,20 @@ class StockMonitor:
                 'high52w': quote.get('high52w', quote.get('high52_week')),
                 'low52w': quote.get('low52w', quote.get('low52_week')),
             }
+            # 每真正取回一次行情就打一条，便于在终端直接看到"在拉、拉到了什么"。
+            # 只在这里打：同一代码本轮由 _shared_result 保证只请求一次，不会重复刷屏。
+            logger.info(
+                '雪球行情 name=%s stockid=%s current=%s pe=%s pb=%s 股息=%s 52W低=%s 52W高=%s',
+                stock_data['name'],
+                stock_code,
+                stock_data['current'],
+                stock_data['pe_ttm'],
+                stock_data['pb'],
+                stock_data['dividend_yield'],
+                stock_data['low52w'],
+                stock_data['high52w'],
+            )
+            return stock_data
         except Exception as exc:
             self._handle_xueqiu_error(stock_code, exc)
             return None
@@ -807,10 +821,10 @@ class StockMonitor:
                 lambda: StockKline.get_kline_data_from_snowball(stock.stock_code, days=40),
             )
             if kline_df is None or len(kline_df) == 0:
-                logger.warning('未获取到 K 线数据 stock=%s', stock.stock_code)
+                logger.warning('未获取到 K 线数据 stock=%s(%s)', stock.stock_name, stock.stock_code)
                 return
-            saved_count = StockKline.save_kline_data(stock.id, stock.stock_code, kline_df)
-            logger.debug('K 线数据已保存 stock=%s count=%s', stock.stock_code, saved_count)
+            saved_count = StockKline.save_kline_data(stock.id, stock.stock_code, kline_df, stock.stock_name)
+            logger.debug('K 线数据已保存 stock=%s(%s) count=%s', stock.stock_name, stock.stock_code, saved_count)
         except Exception:
             self.stats['errors'] += 1
             logger.exception('处理 K 线数据出错 stock=%s', stock.stock_code)
