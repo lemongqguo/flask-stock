@@ -81,6 +81,32 @@ class BaseModel:
             conn.close()
 
     @classmethod
+    def execute_many(cls, query, seq_params):
+        """
+        在同一条连接上批量执行同一条 SQL（INSERT / UPDATE）。
+
+        存在的意义：逐条 ``execute_update`` 会让一次批量写入变成 N 次"取连接—执行—归还"，
+        在连接池里就是 N 次排队机会。K 线一次要写 40 行，逐条写等于把连接占用时间
+        放大几十倍，是连接池排队（进而整体卡死）的主要放大器。
+
+        :param seq_params: 参数序列（每项对应一次执行）
+        :return: 受影响行数；失败抛异常（由调用方捕获处理）
+        """
+        conn = get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.executemany(query, seq_params)
+                affected_rows = cursor.rowcount
+            conn.commit()
+            return affected_rows
+        except Exception:
+            logger.exception('批量执行失败: %s', ' '.join(str(query).split())[:200])
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @classmethod
     def build_search_where(cls, search_query, keyword='search'):
         """
         根据 search_query 构造 WHERE 子句。

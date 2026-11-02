@@ -38,6 +38,9 @@ bind = os.environ.get('BIND') or '%s:%s' % (Config.HOST, Config.PORT)
 workers = 1                      # 见文件头说明：本项目必须单进程
 worker_class = 'gthread'         # 只有 gthread 支持 threads，sync 会忽略该参数
 threads = int(os.environ.get('GUNICORN_THREADS') or 8)
+# 注意：threads + MONITOR_MAX_WORKERS 就是数据库的**并发消费者**数量，
+# config.get_pool() 的默认容量按这两者推导；若显式调大 threads / MONITOR_MAX_WORKERS，
+# 务必同步调大 MYSQL_MAX_CONNECTIONS，否则高峰期会排队取连接（2026-10-30 假死修复）。
 # 不预加载：master 里 import app 会预先建好 MySQL 连接池，fork 后父子共享连接 socket；
 # 单 worker 下预加载也省不了内存，因此统一由 worker 自加载。
 preload_app = False

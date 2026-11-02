@@ -589,6 +589,48 @@ tbody tr:hover .row-actions { opacity: 1; }
 .ind-flags { display: flex; gap: 5px; flex-wrap: wrap; }
 .ind-flags .type-badge { cursor: default; }
 
+/* 组合信号「四点指示器」：一颗点 = 一条判定，命中点亮成自己的颜色并呼吸，悬停看明细 */
+.combo-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ind-dots { display: inline-flex; align-items: center; gap: 6px; }
+.ind-dot {
+  position: relative; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--surface-3); border: 1px solid var(--border);
+  cursor: default; transition: .16s var(--ease);
+}
+/* 四颗点各一个色相：一眼能看出命中的是哪一条，不必挨个悬停。
+   未命中的点统一走灰底（--surface-3），只有命中点才上色。 */
+.ind-dots .ind-dot:nth-child(1) { --dot-c: var(--violet); }   /* 52 周新低 */
+.ind-dots .ind-dot:nth-child(2) { --dot-c: var(--accent); }   /* 52 周回撤 */
+.ind-dots .ind-dot:nth-child(3) { --dot-c: var(--info); }     /* 20 日跑输 */
+.ind-dots .ind-dot:nth-child(4) { --dot-c: var(--up); }       /* 5 日倍数 */
+.ind-dot:hover { border-color: var(--dot-c); }
+.ind-dot.on { background: var(--dot-c); border-color: transparent; animation: ind-dot-breathe 2.2s ease-in-out infinite; }
+/* 依次错开相位，四颗点此起彼伏而不是同步闪 */
+.ind-dot.on:nth-child(2) { animation-delay: .28s; }
+.ind-dot.on:nth-child(3) { animation-delay: .56s; }
+.ind-dot.on:nth-child(4) { animation-delay: .84s; }
+@keyframes ind-dot-breathe {
+  0%, 100% { opacity: .8; box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot-c) 50%, transparent); }
+  50% { opacity: 1; box-shadow: 0 0 0 5px transparent; }
+}
+
+/* 悬停气泡：position: fixed + JS 定位（见 theme.js initIndicatorDots）。
+   不用 ::after 是因为 `tbody td` 有 overflow:hidden、`.table-wrap` 是滚动容器，
+   气泡会被裁掉只剩一条边；fixed 浮层挂在 body 上，不受任何祖先裁剪。 */
+.ind-tip {
+  position: fixed; z-index: 200; left: 0; top: 0;
+  max-width: 280px; padding: 8px 11px; border-radius: 9px;
+  background: var(--surface); color: var(--text-2);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  font-size: 11.5px; font-weight: 500; line-height: 1.65; text-align: left;
+  white-space: pre-line; pointer-events: none;
+  opacity: 0; transform: translateY(3px); transition: .14s var(--ease);
+}
+.ind-tip.show { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .ind-dot.on { animation: none; }
+}
+
 /* ------------------------------ AI 分析（007） ------------------------------ */
 .ai-report { padding: 20px; }
 .ai-report-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }

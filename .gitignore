@@ -20,7 +20,6 @@ venv/
 env/
 
 # --- 凭据与本地配置 ---
-.dockerignore
 .env
 *.pem
 *.key

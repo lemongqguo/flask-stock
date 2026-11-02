@@ -24,6 +24,7 @@ from utils.indicator_rules import (
     DEFAULT_THRESHOLDS,
     SUBTYPES,
     is_combo_hit,
+    is_low_drawdown_hit,
 )
 
 logger = logging.getLogger(__name__)
@@ -488,8 +489,10 @@ def indicator_list():
     只读的最新快照，不触发任何行情请求；缺数据的标的显示为「未采集」而不是 0%，
     避免把「没数据」渲染成「健康」。
 
-    页面只回答一个问题：**四项是否同时满足**（AND）。四条 flag 仍逐项落库（便于排查），
-    但不再单独展示其命中角标——单条件命中率太高，展示出来会让用户误以为是告警依据。
+    页面展示两条告警口径的结论（2026-11-02 起）：
+    ① 四项是否同时满足（AND）→ `combo`；② 52 周新低 + 52 周回撤 是否同时满足 → `low_drawdown`。
+    四条 flag 仍逐项落库（便于排查），但不再单独展示其命中角标——
+    单条件命中率太高，展示出来会让用户误以为是告警依据。
 
     分页与订单列表同口径（`?page=` / `?per_page=`，默认每页 10 条）。
     KPI 里只有「监控标的」是全量（`get_all` 返回的 total），命中 / 未采集是**本页**口径。
@@ -515,17 +518,21 @@ def indicator_list():
 
     rows = []
     summary = {'total': total_count, 'collected': 0, 'combo_hits': 0,
-               'latest_date': None}
+               'low_drawdown_hits': 0, 'latest_date': None}
     for stock in stocks:
         indicator = latest_rows.get(stock['id'])
         if not indicator:
-            rows.append({'stock': stock, 'indicator': None, 'combo': False})
+            rows.append({'stock': stock, 'indicator': None, 'combo': False,
+                         'low_drawdown': False})
             continue
 
         flags = {sub: indicator.get(f'flag_{sub}') for sub in SUBTYPES}
         combo = is_combo_hit(flags)
+        # 与监控发信同口径：四项全中按 combo 展示，否则看「新低 + 回撤」是否同时成立
+        low_drawdown = (not combo) and is_low_drawdown_hit(flags)
         summary['collected'] += 1
         summary['combo_hits'] += 1 if combo else 0
+        summary['low_drawdown_hits'] += 1 if low_drawdown else 0
 
         trade_date = indicator.get('trade_date')
         trade_date_text = trade_date.strftime('%Y-%m-%d') if hasattr(trade_date, 'strftime') \
@@ -534,6 +541,7 @@ def indicator_list():
             summary['latest_date'] = trade_date_text
 
         rows.append({'stock': stock, 'indicator': indicator, 'combo': combo,
+                     'low_drawdown': low_drawdown,
                      'trade_date_text': trade_date_text,
                      'range_pos': _range_position(indicator)})
 

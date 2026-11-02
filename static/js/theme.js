@@ -578,6 +578,59 @@ function initAiSearch() {
   document.addEventListener('click', e => { if (!box.contains(e.target)) close(); });
 }
 
+/* ---------------- 指标监控：四点指示器的悬停明细（固定定位浮层） ----------------
+   为什么不用 CSS ::after：表格单元格有 overflow:hidden、外层还是横向滚动容器，
+   气泡会被裁掉只剩一条边。这里统一用一个挂到 body 上的 fixed 浮层，
+   由 .ind-dot[data-tip] 提供内容，位置按点的视口坐标算：
+   默认在点上方居中，上方空间不够就翻到下方，再夹进视口左右边界内。 */
+function initIndicatorDots() {
+  if (!document.querySelector('.ind-dot[data-tip]')) return;
+
+  let tip = null;
+
+  function show(dot) {
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.className = 'ind-tip';
+      document.body.appendChild(tip);
+    }
+    // data-tip 里的 &#10; 在 HTML 解析时已是真换行，配合 CSS 的 pre-line 分两行
+    tip.textContent = dot.dataset.tip || '';
+    tip.classList.add('show');
+
+    const dotRect = dot.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const GAP = 8;
+    const PAD = 8;
+
+    let left = dotRect.left + dotRect.width / 2 - tipRect.width / 2;
+    left = Math.max(PAD, Math.min(left, window.innerWidth - tipRect.width - PAD));
+
+    let top = dotRect.top - tipRect.height - GAP;
+    if (top < PAD) top = dotRect.bottom + GAP;   // 上方放不下就翻到点下方
+
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+
+  function hide() {
+    if (tip) tip.classList.remove('show');
+  }
+
+  // 事件委托：分页/筛选后新增的行不必重新绑定
+  document.addEventListener('mouseover', e => {
+    const dot = e.target.closest && e.target.closest('.ind-dot[data-tip]');
+    if (dot) show(dot);
+  });
+  document.addEventListener('mouseout', e => {
+    const dot = e.target.closest && e.target.closest('.ind-dot[data-tip]');
+    if (dot) hide();
+  });
+  // 滚动/缩放后坐标就失效了，直接收起（再悬停会重新定位）
+  window.addEventListener('scroll', hide, true);
+  window.addEventListener('resize', hide);
+}
+
 /* ---------------- AI 页「换个标的」：回到顶部搜索框 ---------------- */
 function initAiFocusSearch() {
   document.querySelectorAll('[data-ai-focus]').forEach(btn => {
@@ -614,4 +667,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initAiSearch();
   initAiFocusSearch();
   initAskComposer();
+  initIndicatorDots();
 });

@@ -13,7 +13,7 @@
     {%- elif t == 'pb' -%}
         <span class="type-badge pb">PB</span>
     {%- elif t == 'indicator' -%}
-        <span class="type-badge indicator">指标{% if subtype %} · {{ {'low52w':'52周新低','drawdown':'52周回撤','rs20':'20日跑输','rs5':'5日倍数','combo':'组合信号'}.get(subtype, subtype) }}{% endif %}</span>
+        <span class="type-badge indicator">指标{% if subtype %} · {{ {'low52w':'52周新低','drawdown':'52周回撤','rs20':'20日跑输','rs5':'5日倍数','combo':'组合信号','low_drawdown':'新低+回撤'}.get(subtype, subtype) }}{% endif %}</span>
     {%- else -%}
         <span class="type-badge">未知</span>
     {%- endif -%}

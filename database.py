@@ -2,13 +2,20 @@
 数据库初始化与连接管理。
 """
 import logging
+import time
 
 import pymysql
 
-from config import get_pool
+from config import Config, get_pool
 from utils.alarm_rules import NOTIFY_UNKNOWN, classify_alarm_text
 
 logger = logging.getLogger(__name__)
+
+try:  # DBUtils 各版本都有该异常；取不到时退化为"不重试"，但同样不会无限等待
+    from dbutils.pooled_db import TooManyConnections
+except Exception:  # pragma: no cover - 仅当依赖结构变化时才走到
+    class TooManyConnections(Exception):
+        """连接池已满（拿不到 DBUtils 同名异常时的占位定义）。"""
 
 
 def _create_tables(conn):
@@ -521,7 +528,7 @@ def init_database():
     :return: True 表示成功
     """
     try:
-        conn = get_pool().connection()
+        conn = get_connection()
     except Exception:
         logger.exception('无法获取数据库连接，请检查 MYSQL_* 环境变量配置')
         return False
@@ -557,9 +564,106 @@ def init_database():
         conn.close()
 
 
-def get_connection():
-    """获取一个数据库连接（由连接池管理，调用方负责 close）。"""
-    return get_pool().connection()
+def _enable_tcp_keepalive(conn):
+    """
+    给底层 socket 打开 TCP keepalive（2026-10-30 假死配套加固）。
+
+    场景：容器（`172.17.0.x`，docker 网桥）跨网段访问 MySQL（`192.168.100.x`），
+    中间设备（NAT conntrack / 防火墙 / 云安全组）会在若干分钟后**静默丢弃**空闲 TCP 连接，
+    而 MySQL 的 `wait_timeout=28800`（8 小时）远大于该超时——两端都还认为连接可用：
+    MySQL 侧看到的是 `Sleep`，应用侧一发请求却永远等不到响应。
+
+    keepalive 让内核在空闲期主动探测（默认 60s 后开始，30s 一次，连丢 3 次判死），
+    死连接会被尽快标记；配合连接池的 ``ping=1``，取连接时立即发现并重连，
+    而不是拿着一条"假活"的连接去写。
+
+    PyMySQL 没有 keepalive 参数，且容器内改 ``net.ipv4.tcp_keepalive_time`` 需要特权，
+    因此只能在拿到连接后按 socket 设置（``setsockopt`` 无需特权）。
+
+    **全部异常只记 debug**：这是加固项，失败不应影响取连接。
+    """
+    if not getattr(Config, 'MYSQL_TCP_KEEPALIVE', True):
+        return False
+
+    try:
+        import socket as _socket
+
+        raw = getattr(conn, '_con', conn)          # DBUtils 包装后的原始 PyMySQL 连接
+        sock = getattr(raw, 'socket', None)
+        sock = sock() if callable(sock) else sock   # PyMySQL 的 socket 可能是方法
+        if sock is None:
+            sock = getattr(raw, '_sock', None)
+        if sock is None or getattr(raw, '_keepalive_enabled', False):
+            return False
+
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)
+        options = (
+            ('TCP_KEEPIDLE', Config.MYSQL_KEEPALIVE_IDLE),
+            ('TCP_KEEPINTVL', Config.MYSQL_KEEPALIVE_INTERVAL),
+            ('TCP_KEEPCNT', Config.MYSQL_KEEPALIVE_COUNT),
+        )
+        for name, value in options:
+            option = getattr(_socket, name, None)
+            if option is None:  # 非 Linux 平台没有这些常量，SO_KEEPALIVE 已足够
+                continue
+            try:
+                sock.setsockopt(_socket.IPPROTO_TCP, option, int(value))
+            except OSError:
+                logger.debug('设置 %s 失败（可忽略）', name)
+
+        try:
+            raw._keepalive_enabled = True   # 同一条连接只设置一次
+        except Exception:  # pragma: no cover - 对象不允许挂属性时跳过
+            pass
+        return True
+    except Exception:
+        logger.debug('开启 TCP keepalive 失败（可忽略）', exc_info=True)
+        return False
+
+
+def get_connection(wait_timeout=None):
+    """
+    获取一个数据库连接（由连接池管理，调用方负责 close）。
+
+    **池满时只等有限时间**（默认 ``Config.MYSQL_POOL_WAIT_TIMEOUT``，10 秒）后抛错。
+
+    为什么必须限时：连接池原先是 ``blocking=True``，池满即无上限排队。
+    并发消费者有 8 个 HTTP 线程 + 6 个监控线程 + 监控主循环，而连接上限曾经只有 5；
+    只要有一条连接被卡住（MySQL 不返回），其余线程会**永久**堵在取连接这一步——
+    网页全部打不开、监控日志停止、只能重启容器，且 gunicorn 的 worker timeout
+    因为 accept 循环仍在 notify 而不会触发重启。
+
+    现在改为超时报错：HTTP 请求返回 500 而不是挂死，监控任务记日志后进入退避重试，
+    连接由 ``read_timeout`` / ``write_timeout`` 兜底最终释放，系统可自愈。
+
+    :param wait_timeout: 等待上限（秒）；None 用配置值，<=0 表示不等待
+    :raises RuntimeError: 等待超时仍未拿到连接
+    """
+    pool = get_pool()
+    limit = Config.MYSQL_POOL_WAIT_TIMEOUT if wait_timeout is None else wait_timeout
+    limit = max(0.0, float(limit or 0))
+    deadline = time.monotonic() + limit
+    last_log = None
+
+    while True:
+        try:
+            conn = pool.connection()
+        except TooManyConnections:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    '数据库连接池已满，等待 %.1fs 仍未取得连接'
+                    '（提高 MYSQL_MAX_CONNECTIONS 或排查是否有慢查询/连接泄漏）' % limit
+                )
+            now = time.monotonic()
+            if last_log is None or now - last_log >= 5:
+                logger.warning('数据库连接池已满，继续等待（剩余 %.1fs）', remaining)
+                last_log = now
+            time.sleep(min(0.05, remaining))
+            continue
+
+        _enable_tcp_keepalive(conn)
+        return conn
 
 
 if __name__ == '__main__':

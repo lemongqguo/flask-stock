@@ -56,8 +56,10 @@ from utils.indicator_rules import (
     DEFAULT_BENCH_CODE,
     DEFAULT_THRESHOLDS,
     SUBTYPE_COMBO,
+    SUBTYPE_LOW_DRAWDOWN,
     build_indicator_alarm,
     is_combo_hit,
+    is_low_drawdown_hit,
     n_day_return,
 )
 from utils.mail_sender import send_mail
@@ -308,8 +310,16 @@ class StockMonitor:
                 owner = False
 
         if not owner:
-            # 首个请求者还在节流/网络等待里，等它拿回来复用即可（比重复请求省一次调用）
-            waiter.wait()
+            # 首个请求者还在节流/网络等待里，等它拿回来复用即可（比重复请求省一次调用）。
+            # 等待必须有上限：首请求者若因网络/数据库卡死迟迟不返回，
+            # 同伴会永久挂在这个 Event 上（线程池被慢慢占满，整轮再也无法推进）。
+            timeout = getattr(self.config, 'MONITOR_SHARED_WAIT_TIMEOUT', 900) or 900
+            if not waiter.wait(float(timeout)):
+                logger.warning(
+                    '等待同代码共享结果超时（%ss），本轮放弃 kind=%s stock=%s',
+                    timeout, kind, stock_code,
+                )
+                return None
             with self._round_lock:
                 return (self._round_cache.get(kind) or {}).get(stock_code)
 
@@ -630,8 +640,12 @@ class StockMonitor:
         约定：
         - 取数失败（K 线不足 / 基准未采集）时对应指标 **不参与判定**，不报错不误报；
         - 新股不足 20 个交易日时 `ret_20d` 为 None → 20 日 / 5 日相关均线指标自动跳过；
-        - **只有四条同时成立才告警**（`is_combo_hit`），且一次只产生一条 `combo` 告警；
+        - 两条告警口径（2026-11-02 起）：
+          ① `combo`：四条同时成立（`is_combo_hit`）；
+          ② `low_drawdown`：52 周新低 + 52 周回撤 同时成立（`is_low_drawdown_hit`）；
           单条命中不告警——四条各自命中率都很高，单条件筛选不符合策略；
+          四项全中时只发 `combo` 一条（信息已覆盖 `low_drawdown`，避免同轮两封邮件）；
+          未命中的口径会清掉自己的冷却，条件消失后再出现仍能重新告警；
         - 单只标的异常不影响整轮循环。
         """
         if not getattr(self.config, 'IND_ENABLED', True):
@@ -666,10 +680,17 @@ class StockMonitor:
             )
             if not saved:
                 return
-            # 组合语义：四条同时成立才产生一条 combo 告警（单条命中率太高，不符合策略）
+            flags = saved.get('flags')
+            combo = is_combo_hit(flags)
+            # 口径一：四条同时成立（单条命中率太高，不符合策略）
             self._emit_indicator_alarm(
-                stock, SUBTYPE_COMBO, saved, bench_code, trade_date,
-                hit=is_combo_hit(saved.get('flags')),
+                stock, SUBTYPE_COMBO, saved, bench_code, trade_date, hit=combo,
+            )
+            # 口径二：52 周新低 + 52 周回撤 同时成立。
+            # 四项全中时 combo 已覆盖这两项，不再重复发一封。
+            self._emit_indicator_alarm(
+                stock, SUBTYPE_LOW_DRAWDOWN, saved, bench_code, trade_date,
+                hit=(not combo) and is_low_drawdown_hit(flags),
             )
         except Exception:
             self.stats['errors'] += 1
