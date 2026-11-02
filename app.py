@@ -23,8 +23,11 @@ from views.ai_analysis import ai_bp
 from views.auth import auth_bp
 from views.stock_orders import stock_bp
 
-# 启动即初始化日志，保证后续模块的 logger 生效
-setup_logging(level=Config.DEBUG and 'DEBUG' or 'INFO')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 启动即初始化日志，保证后续模块的 logger 生效。
+# 级别优先取 LOG_LEVEL 环境变量（debug 模式强制 DEBUG），日志目录由 logging_config 决定（默认本文件同级 logs/）。
+setup_logging(level='DEBUG' if Config.DEBUG else None)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -215,9 +218,18 @@ def set_admin_command(username):
         raise SystemExit(1)
 
 
-if __name__ == '__main__':
-    # 生产环境严格校验配置（缺凭据直接拒绝启动）
-    validate_runtime_settings(strict=not Config.DEBUG)
+def prepare_runtime(strict=False, install_signals=True):
+    """
+    进程开始对外服务前的启动副作用，`python app.py` 与 gunicorn `post_fork` 共用。
+
+    **为什么必须抽出来**：gunicorn 只做 `import app`，`__main__` 块永不执行，
+    于是监控线程 / 退出处理器 / 启动自检全被跳过——结果是"服务起来了但半天没有一行日志"。
+
+    :param strict: True 时缺必填配置即抛 RuntimeError（生产）
+    :param install_signals: 是否注册 SIGINT/SIGTERM 处理器；
+        gunicorn 下必须传 False——它自己接管了信号，重复注册会破坏 graceful timeout
+    """
+    validate_runtime_settings(strict=strict)
 
     # 网络调用兜底超时，避免线程挂死导致进程无法退出
     try:
@@ -227,8 +239,14 @@ if __name__ == '__main__':
     except Exception:  # pragma: no cover - 兜底，不应阻断启动
         logger.exception('设置 socket 默认超时失败')
 
-    install_shutdown_handlers()
-    start_monitoring_on_startup()
+    if install_signals:
+        install_shutdown_handlers()
+    return start_monitoring_on_startup()
+
+
+if __name__ == '__main__':
+    # 生产环境严格校验配置（缺凭据直接拒绝启动）
+    prepare_runtime(strict=not Config.DEBUG)
 
     try:
         app.run(

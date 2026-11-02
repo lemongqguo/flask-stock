@@ -16,7 +16,7 @@
 | 待归档变更 | 9（006 指标监控：待人工确认 UI 与真实雪球采集周期；**007 AI 页改版一**；**订单列表 AI 快捷入口**；**007 AI 页改版二（搜索式工作台）**：均待人工确认观感；**AI_MODEL 支持清单**：待人工确认下拉；**006 指标告警改四项 AND 组合触发**：待真实环境验证；**006 指标页 AI 快捷入口**、**006 指标页分页 + AI 入口换配色**：待人工确认观感；**004 收盘后照常采集**：待观察真实收盘后日志） |
 | 已闭环缺陷 | 15（D-01 ~ D-15） |
 | 未闭环待办 | 9（T-01 ~ T-09，P1: 3 / P2: 6）；T-12 已于 2026-10-22 验证闭环 |
-| 自动化测试 | 634 个用例（标准库 `unittest`）。运行方式：`stockenv\Scripts\python.exe tests/run_all.py`；本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
+| 自动化测试 | 634 个用例（标准库 `unittest`）。运行方式：`./stockvenv/bin/python tests/run_all.py`（Windows：`stockvenv\Scripts\python.exe`）；**必须用项目自带的虚拟环境**（Python 3.12 + numpy 2.5.4 + pandas 3.1.0，已与 `requirements.txt` 对齐）。本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
 
 > **归档规则**：变更记录置为「已合入」后移入 `archive/changes/`。007 首次交付已于 2026-10-22 完成真实模型调用验证并归档；
 > 006（待真实雪球周期）与 007 改版（待人工确认三栏观感）暂留 `changes/`。
@@ -49,7 +49,8 @@
 | 行情/PE/PB 回写 | 已实现 | [004](./current/004-monitor-service.md) | `models/stock_monitor.py` | 分步 try/except + 错误计数 |
 | 邮件告警通知 | 已实现 | [004](./current/004-monitor-service.md) | `utils/mail_sender.py`、`config.py` | 收件人前置校验 + 超时 + 开关 |
 | 配置与凭据管理 | 已实现 | [004](./current/004-monitor-service.md) | `config.py`、`.env.example` | 环境变量 + 启动自检 fail-fast |
-| 日志 | 已实现 | [004](./current/004-monitor-service.md) | `utils/logging_config.py` | 控制台 + 轮转文件（始终落盘） |
+| 日志 | 已实现 | [004](./current/004-monitor-service.md) | `utils/logging_config.py` | 控制台 + 轮转文件（始终落盘）；**2026-10-27 起**支持 `LOG_LEVEL` / `LOG_DIR` / `LOG_TO_FILE` / `LOG_STREAM`，目录改项目根绝对路径，控制台动态解析 stdout（适配 gunicorn `--capture-output`） |
+| gunicorn 部署适配 | 已实现（2026-10-27 新增） | [004](./current/004-monitor-service.md) | `gunicorn.conf.py`、`app.prepare_runtime()`、`start.sh`、`Dockerfile` | 强制 `workers=1` + gthread；`post_fork` 起监控、`worker_exit` 停监控；日志打到终端；[变更](./changes/2026-10-27-gunicorn-deployment.md) |
 | K 线采集与落库 | 已实现 | [005](./current/005-kline-signal.md) | `models/stock_kline.py` | 按 `trade_date` 存在则更新 |
 | MA 均线计算与金叉/死叉 | 已实现 | [005](./current/005-kline-signal.md) | `models/stock_kline.py` | NaN 兜底；MA10 仅展示 |
 | 告警类型字段（类型/子类型/档位/通知状态） | 已实现 | [003](./current/003-alarm-thresholds.md) | `database.py`、`models/stock_alarm.py`、`models/base.py`、`utils/alarm_rules.py` | 存量回填 1590 条，零 unknown；[变更](./changes/2026-10-21-alarm-type-fields.md) |
@@ -101,6 +102,7 @@
 | T-11 | P2 | **管理员列表没有「归属用户」列**：admin 看到全量订单但看不出每行属于谁，用户多了难以分辨 | [002](./current/002-stock-order.md) | 待办 |
 | T-14 | P2 | 同一只票被多人持有时，行情 / K 线 / 指标快照按人重复落库；未在真实环境验证监控去重的实际请求量 | [004](./current/004-monitor-service.md) | 待办 |
 | T-12 | P1 | AI 分析未在真实凭据下验证 | [007](./current/007-ai-analysis.md) | **已验证**（2026-10-22 真实网关跑通连通 / 分析 / 追问 / 双风格；见变更记录 §8.4） |
+| T-13 | P1 | **gunicorn 部署下监控线程不启动**：`import app` 不执行 `__main__`，监控 / 启动自检 / 退出处理器全部跳过；且 `LOG_LEVEL` 无人解析、日志目录是相对路径 | [004](./current/004-monitor-service.md) | **已交付**（2026-10-27：`app.prepare_runtime()` + `gunicorn.conf.py` 单进程 gthread；[变更](./changes/2026-10-27-gunicorn-deployment.md)，待真实环境跑一轮完整交易日后合入） |
 
 > 变更明细见 [2026-10-21 M1 缺陷治理](./changes/2026-10-21-m1-defect-hardening.md)。
 

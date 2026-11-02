@@ -17,6 +17,11 @@
 单条命中的标的太多（尤其 52 周回撤 >35% 是长期持续状态），单条件筛选不符合策略，
 故只有**四项同时成立**才构成一次告警；缺任一项数据判 False，组合自然不触发。
 见 [../spec/changes/2026-10-23-indicator-combo.md](../spec/changes/2026-10-23-indicator-combo.md)。
+
+**第二条告警口径（2026-11-02 起）：52 周新低 + 52 周回撤 两条同时命中即告警。**
+四项 AND 太严，长期阴跌但未跑输基准的标的会被漏掉，故新增一条低门槛组合：
+只要「接近 52 周最低」与「52 周回撤达阈值」**同时成立**就告警（`is_low_drawdown_hit`）。
+两条告警互相独立，**四项全中时只发 combo 一条**（避免同一标的同轮两封邮件）。
 """
 import logging
 
@@ -35,8 +40,10 @@ SUBTYPES = (SUBTYPE_LOW52W, SUBTYPE_DRAWDOWN, SUBTYPE_RS20, SUBTYPE_RS5)
 # 组合信号：四条同时命中才产生的一次告警（不是第五种判据，故不进 SUBTYPES，
 # 否则 hit_subtypes / evaluate_indicators 的逐项语义会被污染）
 SUBTYPE_COMBO = 'combo'
-# 允许写进 stock_alarm.alarm_subtype 的取值：四条原子 + 组合
-ALARM_SUBTYPES = SUBTYPES + (SUBTYPE_COMBO,)
+# 第二条告警：52 周新低 + 52 周回撤 两条同时命中（2026-11-02）
+SUBTYPE_LOW_DRAWDOWN = 'low_drawdown'
+# 允许写进 stock_alarm.alarm_subtype 的取值：四条原子 + 两种组合
+ALARM_SUBTYPES = SUBTYPES + (SUBTYPE_COMBO, SUBTYPE_LOW_DRAWDOWN)
 
 SUBTYPE_LABELS = {
     SUBTYPE_LOW52W: '52 周新低',
@@ -44,6 +51,7 @@ SUBTYPE_LABELS = {
     SUBTYPE_RS20: '20 日跑输',
     SUBTYPE_RS5: '5 日倍数',
     SUBTYPE_COMBO: '组合信号',
+    SUBTYPE_LOW_DRAWDOWN: '新低+回撤',
 }
 
 # 阈值默认值。与 config.py 的 IND_* 保持一致，但此处不 import config，
@@ -217,7 +225,8 @@ def evaluate_indicators(snapshot, thresholds=None):
     :param snapshot: dict(price, high52w, low52w, ret_5d, ret_20d, bench_ret_5d, bench_ret_20d)
     :param thresholds: 阈值 dict，缺省用 DEFAULT_THRESHOLDS
     :return: dict —— metrics（pct_from_low52w / drawdown_52w / rs_20d / rs_5d_ratio）、
-             flags（四条原子指标各自的命中与否）、combo_hit（四条是否同时命中）
+             flags（四条原子指标各自的命中与否）、combo_hit（四条是否同时命中）、
+             low_drawdown_hit（52 周新低 + 52 周回撤 是否同时命中）
     """
     snapshot = snapshot or {}
     th = dict(thresholds or DEFAULT_THRESHOLDS)
@@ -260,8 +269,10 @@ def evaluate_indicators(snapshot, thresholds=None):
         'rs_20d': rs_20d,
         'rs_5d_ratio': rs_5d_ratio,
         'flags': flags,
-        # 告警只看这一个值：四条同时成立才发（2026-10-23 组合语义）
+        # 告警口径一：四条同时成立才发（2026-10-23 组合语义）
         'combo_hit': is_combo_hit(flags),
+        # 告警口径二：52 周新低 + 52 周回撤 同时成立即发（2026-11-02）
+        'low_drawdown_hit': is_low_drawdown_hit(flags),
     }
 
 
@@ -286,6 +297,21 @@ def is_combo_hit(flags):
     if not flags:
         return False
     return all(flags.get(subtype) for subtype in SUBTYPES)
+
+
+def is_low_drawdown_hit(flags):
+    """
+    第二条告警口径：**52 周新低 与 52 周回撤 同时命中**（AND）即算。
+
+    与 `is_combo_hit` 的关系：这是低门槛版本，只看两项长期指标，不要求跑输基准或 5 日急跌，
+    用来覆盖「长期阴跌但没跑输基准」的标的。缺任一项数据判 False → 不命中。
+
+    :param flags: evaluate_indicators 返回的 flags dict
+    :return: True / False
+    """
+    if not flags:
+        return False
+    return bool(flags.get(SUBTYPE_LOW52W)) and bool(flags.get(SUBTYPE_DRAWDOWN))
 
 
 # ----------------------------------------------------------------------
@@ -336,6 +362,19 @@ def build_indicator_alarm(stock_name, subtype, metrics, thresholds=None, bench_c
             f'④ 5 日倍数 {_fmt(metrics.get("rs_5d_ratio"), " 倍")}'
             f'（个股 {_fmt(metrics.get("ret_5d"))} / 基准 {_fmt(metrics.get("bench_ret_5d"))}，'
             f'阈值 ≥ {_fmt(th.get("rs5_ratio"), " 倍")}）。'
+        )
+
+    if subtype == SUBTYPE_LOW_DRAWDOWN:
+        # 两条长期指标同时命中：邮件里把两项实测值与阈值都交代清楚
+        return (
+            f'【{stock_name}】52 周新低 + 回撤同时触发啦',
+            f'【{stock_name}】52 周新低与 52 周回撤同时满足：\n'
+            f'① 距 52 周低 {_fmt(metrics.get("pct_from_low52w"))}'
+            f'（阈值 ≤ {_fmt(th.get("low52w_near_pct"))}），'
+            f'现价 {_fmt(metrics.get("price"), "")} / 52 周低 {_fmt(metrics.get("low52w"), "")}；\n'
+            f'② 52 周回撤 {_fmt(metrics.get("drawdown_52w"))}'
+            f'（阈值 ≤ -{_fmt(th.get("drawdown_52w_pct"), "%")}），'
+            f'52 周高 {_fmt(metrics.get("high52w"), "")}。'
         )
 
     if subtype == SUBTYPE_LOW52W:

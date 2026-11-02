@@ -21,13 +21,35 @@
     {%- endif -%}
 {%- endmacro %}
 
-{% macro combo_cell(ind, combo) -%}
+{# 纯文本数值：用于 data-tip 属性（属性里不能塞 HTML span） #}
+{% macro val(v, suffix='%') -%}{{ '—' if v is none else '%.2f'|format(v|float) ~ suffix }}{%- endmacro %}
+{# 阈值去掉多余的 0：5.0 → 5、2.5 → 2.5 #}
+{% macro th(v, suffix='%') -%}{{ '%g'|format(v|float) ~ suffix }}{%- endmacro %}
+
+{# 组合信号列：状态徽标 + 四点命中指示器（命中一颗亮一颗并呼吸，悬停看明细） #}
+{% macro combo_cell(ind, combo, low_drawdown) -%}
     {%- if ind is none -%}
         <span class="type-badge">未采集</span>
-    {%- elif combo -%}
-        <span class="type-badge indicator">满足，已告警</span>
     {%- else -%}
+    <div class="combo-line">
+        {%- if combo -%}
+        <span class="type-badge indicator">四项满足，已告警</span>
+        {%- elif low_drawdown -%}
+        <span class="type-badge indicator">新低+回撤，已告警</span>
+        {%- else -%}
         <span class="type-badge">未满足</span>
+        {%- endif -%}
+        <span class="ind-dots" role="img" aria-label="四项指标命中情况">
+            <span class="ind-dot {{ 'on' if ind.flag_low52w }}"
+                  data-tip="52 周新低 · {{ '已满足' if ind.flag_low52w else '未满足' }}&#10;距 52 周低 {{ val(ind.pct_from_low52w) }}（阈值 ≤ {{ th(global_thresholds.low52w_near_pct) }}）"></span>
+            <span class="ind-dot {{ 'on' if ind.flag_drawdown }}"
+                  data-tip="52 周回撤 · {{ '已满足' if ind.flag_drawdown else '未满足' }}&#10;回撤 {{ val(ind.drawdown_52w) }}（阈值 ≤ -{{ th(global_thresholds.drawdown_52w_pct) }}）"></span>
+            <span class="ind-dot {{ 'on' if ind.flag_rs20 }}"
+                  data-tip="20 日跑输 · {{ '已满足' if ind.flag_rs20 else '未满足' }}&#10;相对基准 {{ val(ind.rs_20d) }}（阈值 ≤ -{{ th(global_thresholds.rs20_pct) }}）"></span>
+            <span class="ind-dot {{ 'on' if ind.flag_rs5 }}"
+                  data-tip="5 日倍数 · {{ '已满足' if ind.flag_rs5 else '未满足' }}&#10;倍数 {{ val(ind.rs_5d_ratio, ' 倍') }}（阈值 ≥ {{ th(global_thresholds.rs5_ratio, ' 倍') }}）"></span>
+        </span>
+    </div>
     {%- endif -%}
 {%- endmacro %}
 
@@ -35,7 +57,7 @@
 <div class="page-head">
     <div>
         <h1 class="page-title">指标监控</h1>
-        <p class="page-desc">52 周新低 + 52 周回撤 + 20 日跑输 + 5 日倍数<b>四项同时满足</b>才产生告警 · 基准 {{ bench_code }} · 组合冷却 {{ cooldown_hours }} 小时</p>
+        <p class="page-desc">口径一：四项同时满足 · 口径二：<b>52 周新低 + 52 周回撤</b>同时满足 · 任一命中即告警（同轮不重复发信） · 基准 {{ bench_code }} · 冷却 {{ cooldown_hours }} 小时</p>
     </div>
 </div>
 
@@ -53,9 +75,9 @@
         <div class="kpi-foot">全量标的，本页已采集 {{ summary.collected }} 只</div>
     </div>
     <div class="kpi">
-        <div class="kpi-label"><svg width="13" height="13"><use href="#i-alert"/></svg> 组合命中</div>
-        <div class="kpi-value num {{ 'up' if summary.combo_hits else 'down' }}">{{ summary.combo_hits }}</div>
-        <div class="kpi-foot">本页四项同时满足，已发告警</div>
+        <div class="kpi-label"><svg width="13" height="13"><use href="#i-alert"/></svg> 告警命中</div>
+        <div class="kpi-value num {{ 'up' if (summary.combo_hits + summary.low_drawdown_hits) else 'down' }}">{{ summary.combo_hits + summary.low_drawdown_hits }}</div>
+        <div class="kpi-foot">本页四项满足 {{ summary.combo_hits }} 只 · 新低+回撤 {{ summary.low_drawdown_hits }} 只</div>
     </div>
     <div class="kpi">
         <div class="kpi-label"><svg width="13" height="13"><use href="#i-chart"/></svg> 未采集</div>
@@ -69,7 +91,7 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card card-fill">
     <div class="toolbar" style="border-bottom:1px solid var(--border-soft);margin-bottom:0">
         <span class="result-count">共 {{ total_count }} 只标的</span>
         <span class="spacer"></span>
@@ -160,7 +182,7 @@
                         {% endif %}
                     </td>
                     <td>
-                        {{ combo_cell(ind, row.combo) }}
+                        {{ combo_cell(ind, row.combo, row.low_drawdown) }}
                         {% if ind %}
                         <div class="muted" style="margin-top:5px">
                             相对强弱 {{ pct(ind.rs_20d) }}

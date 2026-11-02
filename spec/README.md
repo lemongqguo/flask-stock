@@ -86,6 +86,7 @@ spec/
 | [2026-10-23 指标页 AI 快捷入口](./changes/2026-10-23-indicator-ai-shortcut.md) | 新增能力 | [006](./current/006-stock-indicator.md)、[007](./current/007-ai-analysis.md)、[008](./current/008-frontend-ui.md) | 1（**已交付**：每行标的右端直达 AI 页，不新增列；待人工确认观感） |
 | [2026-10-23 指标页分页 + AI 入口换配色](./changes/2026-10-23-indicator-pagination.md) | 新增能力 | [006](./current/006-stock-indicator.md)、[008](./current/008-frontend-ui.md) | 1（**已交付**：默认每页 10 条；AI 入口改信息蓝；待人工确认观感） |
 | [2026-10-23 收盘后照常采集](./changes/2026-10-23-offhours-collection.md) | 行为变更 | [004](./current/004-monitor-service.md)、[006](./current/006-stock-indicator.md)、[003](./current/003-alarm-thresholds.md) | 1（**已交付**：非交易时段由停采改慢采；待观察真实收盘后日志） |
+| [2026-10-27 gunicorn 部署适配（含日志打到终端）](./changes/2026-10-27-gunicorn-deployment.md) | 技术重构 + 行为变更 | [004](./current/004-monitor-service.md) | 1（**已交付**：`gunicorn.conf.py` 单进程 gthread + `prepare_runtime()`；待真实环境跑一轮完整交易日） |
 
 > 已合入：[告警表补齐类型字段](./changes/2026-10-21-alarm-type-fields.md)（003 新增 3.5 节）、
 > [前端 UI 改版](./changes/2026-10-21-frontend-redesign.md)（008，UI 底座先行，新功能页面直接按新样式落）、
@@ -134,7 +135,7 @@ spec/
 5. **AI 只实测过一家网关**：`api.agicto.cn`（`responses` / `chat` 双风格均通），换厂商需各自确认返回结构；
    另**推理型模型建议把 `AI_TIMEOUT` 调到 120~180**（默认 60 在长思考时会超时，代码会正确降级为「超时失败、不落库」）。
 6. **监控无运行时控制面**：无法在页面上启停监控或查看健康度（`get_status()` 已有数据，未接 UI）。
-7. **无 CI**：462 个用例只能本地运行（`stockenv\Scripts\python.exe tests/run_all.py`）。**必须走项目自带的 `stockenv/`**（Python 3.11 + numpy 1.24.3 + pandas 2.0.3）；全局解释器的 numpy/pandas 版本不兼容会让 import pandas 的模块直接崩。
+7. **无 CI**：634 个用例只能本地运行（`./stockvenv/bin/python tests/run_all.py`，Windows 为 `stockvenv\Scripts\python.exe`）。**必须走项目自带的 `stockvenv/`**（Python 3.12 + numpy 2.5.4 + pandas 3.1.0，与 `requirements.txt` 对齐）；全局解释器的 numpy/pandas 版本不兼容会让 import pandas 的模块直接崩。
 8. **无 CSRF 防护**：Flask-WTF 已引入但未启用，所有 POST 表单裸奔。
 9. **负 PE 会命中 PE 档位**：亏损公司必然触发 PE 告警，当前行为已被测试锁定，是否过滤待产品决策。
 10. **指标告警要求四项同时成立**（2026-10-23，[ADR-004](./decisions/004-indicator-combo-semantics.md)）：
@@ -149,6 +150,9 @@ spec/
     - **管理员列表没有「归属用户」列**：admin 看到全量但看不出每行属于谁（台账 T-11）。
 13. **角色变更需重新登录才生效**：角色在登录时写入 session，库里改角色不会让在线会话升级/降级。
     提升管理员用 `flask set-admin <username>`。
+14. **必须单进程部署（2026-10-27，见 [变更记录](./changes/2026-10-27-gunicorn-deployment.md)）**：
+    `gunicorn.conf.py` 固定 `workers = 1`（并发靠 gthread 线程池）。多进程会让告警冷却（T-02）、
+    运行时 AI 密钥、监控线程单例全部失效；要用多进程须先解决这些进程内状态。
 
 ---
 
@@ -166,7 +170,13 @@ spec/
 copy .env.example .env      # Windows；Linux/macOS: cp .env.example .env
 # 编辑 .env，至少填 MYSQL_PASSWORD / SECRET_KEY / XUEQIU_TOKEN / MAIL_* / ALARM_RECIPIENTS
 python database.py          # 建表 + 补索引
-python app.py               # 启动（默认 debug=0）
+python app.py               # 开发启动（默认 debug=0）
+
+# 生产启动（日志打到终端）
+gunicorn -c gunicorn.conf.py app:app
+# 或用统一脚本：等数据库就绪 → 建表 → exec gunicorn（USE_GUNICORN=0 退回 app.py）
+./start.sh
 ```
 
 启动前置校验不通过会直接抛错并列出缺失项，不会带着空配置继续运行。
+生产部署细节见 [`PROJECT_WIKI.md §7.3`](./PROJECT_WIKI.md)。

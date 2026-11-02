@@ -106,7 +106,7 @@ class StockKline(BaseModel):
             return 'normal'
     
     @classmethod
-    def save_kline_data(cls, stock_master_id, stock_code, kline_df):
+    def save_kline_data(cls, stock_master_id, stock_code, kline_df, stock_name):
         """
         保存K线数据到数据库
         
@@ -114,6 +114,7 @@ class StockKline(BaseModel):
             stock_master_id: 股票主表ID
             stock_code: 股票代码
             kline_df: K线数据DataFrame
+            stock_name: 股票名称（可选）
         
         返回:
             成功保存的记录数
@@ -121,72 +122,70 @@ class StockKline(BaseModel):
         if kline_df is None or len(kline_df) == 0:
             return 0
         
+        rows = list(kline_df.iterrows())
+        if not rows:
+            return 0
+
+        # 一次查回该订单已存在的交易日，避免逐行 SELECT：
+        # 原来是 40 行 ×（SELECT + 写）= 80 次取连接，现在固定 3 次以内。
+        # 日期一律用字符串前 19 位比较（YYYY-MM-DD HH:MM:SS），
+        # 与 PyMySQL 格式化 datetime 参数的方式一致，避免 Timestamp/纳秒精度导致误判。
+        dates = [row['timestamp'] for _, row in rows]
+        placeholders = ', '.join(['%s'] * len(dates))
+        exist_result = cls.execute_query(
+            f"SELECT trade_date FROM stock_kline "
+            f"WHERE stock_master_id = %s AND trade_date IN ({placeholders})",
+            tuple([stock_master_id] + dates),
+        )
+        existing = {str(item['trade_date'])[:19] for item in exist_result}
+
+        updates = []
+        inserts = []
+        for _, row in rows:
+            signal_type = cls.check_signal(row['ma5'], row['ma10'], row['ma30'])
+            values = (
+                float(row['open']) if pd.notna(row['open']) else None,
+                float(row['high']) if pd.notna(row['high']) else None,
+                float(row['low']) if pd.notna(row['low']) else None,
+                float(row['close']) if pd.notna(row['close']) else None,
+                float(row['volume']) if pd.notna(row['volume']) else None,
+                float(row['ma5']) if pd.notna(row['ma5']) else None,
+                float(row['ma10']) if pd.notna(row['ma10']) else None,
+                float(row['ma30']) if pd.notna(row['ma30']) else None,
+                signal_type,
+            )
+            if str(row['timestamp'])[:19] in existing:
+                updates.append(values + (stock_master_id, row['timestamp']))
+            else:
+                inserts.append((stock_master_id, stock_code, row['timestamp']) + values)
+
         saved_count = 0
         try:
-            for _, row in kline_df.iterrows():
-                # 检查是否已存在该日期的数据
-                exist_query = """
-                SELECT id FROM stock_kline 
+            if updates:
+                update_query = """
+                UPDATE stock_kline
+                SET open_price = %s, high_price = %s, low_price = %s,
+                    close_price = %s, volume = %s, ma5 = %s, ma10 = %s,
+                    ma30 = %s, signal_type = %s
                 WHERE stock_master_id = %s AND trade_date = %s
                 """
-                exist_result = cls.execute_query(exist_query, (stock_master_id, row['timestamp']))
-                
-                # 判断信号类型
-                signal_type = cls.check_signal(row['ma5'], row['ma10'], row['ma30'])
-                
-                if exist_result:
-                    # 更新已有记录
-                    update_query = """
-                    UPDATE stock_kline 
-                    SET open_price = %s, high_price = %s, low_price = %s, 
-                        close_price = %s, volume = %s, ma5 = %s, ma10 = %s, 
-                        ma30 = %s, signal_type = %s
-                    WHERE stock_master_id = %s AND trade_date = %s
-                    """
-                    params = (
-                        float(row['open']) if pd.notna(row['open']) else None,
-                        float(row['high']) if pd.notna(row['high']) else None,
-                        float(row['low']) if pd.notna(row['low']) else None,
-                        float(row['close']) if pd.notna(row['close']) else None,
-                        float(row['volume']) if pd.notna(row['volume']) else None,
-                        float(row['ma5']) if pd.notna(row['ma5']) else None,
-                        float(row['ma10']) if pd.notna(row['ma10']) else None,
-                        float(row['ma30']) if pd.notna(row['ma30']) else None,
-                        signal_type,
-                        stock_master_id,
-                        row['timestamp']
-                    )
-                    cls.execute_update(update_query, params)
-                else:
-                    # 插入新记录
-                    insert_query = """
-                    INSERT INTO stock_kline 
-                    (stock_master_id, stock_code, trade_date, open_price, high_price, 
-                     low_price, close_price, volume, ma5, ma10, ma30, signal_type)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """
-                    params = (
-                        stock_master_id,
-                        stock_code,
-                        row['timestamp'],
-                        float(row['open']) if pd.notna(row['open']) else None,
-                        float(row['high']) if pd.notna(row['high']) else None,
-                        float(row['low']) if pd.notna(row['low']) else None,
-                        float(row['close']) if pd.notna(row['close']) else None,
-                        float(row['volume']) if pd.notna(row['volume']) else None,
-                        float(row['ma5']) if pd.notna(row['ma5']) else None,
-                        float(row['ma10']) if pd.notna(row['ma10']) else None,
-                        float(row['ma30']) if pd.notna(row['ma30']) else None,
-                        signal_type
-                    )
-                    cls.execute_update(insert_query, params)
-                
-                saved_count += 1
-            
-            logger.info(f"成功保存 {saved_count} 条K线数据，股票代码: {stock_code}")
+                cls.execute_many(update_query, updates)
+            if inserts:
+                insert_query = """
+                INSERT INTO stock_kline
+                (stock_master_id, stock_code, trade_date, open_price, high_price,
+                 low_price, close_price, volume, ma5, ma10, ma30, signal_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cls.execute_many(insert_query, inserts)
+            saved_count = len(rows)
+
+            logger.info('成功保存 %s 条K线数据-股票: %s(%s)',
+                        saved_count, stock_name or '-', stock_code)
+
             return saved_count
         except Exception:
-            logger.exception('保存K线数据失败 %s', stock_code)
+            logger.exception('保存K线数据失败-股票：%s(%s)', stock_name or '-', stock_code)
             return 0
     
     @classmethod

@@ -150,21 +150,74 @@ def validate_runtime_settings(strict=False):
 _POOL = None
 
 
+def _default_pool_size():
+    """
+    连接池默认容量：**必须大于并发消费者总数**。
+
+    并发消费者 = gunicorn gthread 线程数（`GUNICORN_THREADS`，默认 8）
+    + 监控线程池（`MONITOR_MAX_WORKERS`，默认 6）+ 监控主循环自身，再留 5 条余量。
+
+    旧默认值 5 远小于实际并发，是"一条连接被卡住 → 其余线程全部堵死"的放大器。
+    """
+    threads = _get_int('GUNICORN_THREADS', 8)
+    try:
+        workers = int(getattr(Config, 'MONITOR_MAX_WORKERS', 6) or 6)
+    except (TypeError, ValueError):
+        workers = 6
+    return max(10, threads + workers + 5)
+
+
 def get_pool():
-    """返回全局唯一的 MySQL 连接池，首次调用时才真正建立连接。"""
+    """
+    返回全局唯一的 MySQL 连接池，首次调用时才真正建立连接。
+
+    2026-10-30「运行一段时间假死」修复，三处改动都是为了让**任何一处卡住都带不走整个进程**：
+
+    1. 连接带 ``connect_timeout`` / ``read_timeout`` / ``write_timeout``：
+       PyMySQL 默认读写**没有超时**，MySQL 侧不返回（容器 NAT 静默丢包、MySQL 重启、
+       服务端锁等待 / 网络黑洞）时线程会永久阻塞在读写上，并且一直占着这条连接；
+    2. ``blocking=False``：池满时立刻抛 ``TooManyConnections``，由
+       ``database.get_connection`` 做**有限**等待后报错。原来是无上限排队，
+       这正是"网页打不开 + 监控日志停止 + 只能重启容器"的直接成因；
+    3. ``failures``：使用中出现 OperationalError / InterfaceError 的连接直接丢弃重建，
+       不再回到池里被下一个请求复用（死连接不再靠 ping 事后补救）。
+    """
     global _POOL
     if _POOL is None:
         from dbutils.pooled_db import PooledDB
         import pymysql
 
+        # 必须在建连接之前设置：PyMySQL 建连之后不再理会 socket 全局默认超时
+        try:
+            from utils.shutdown import set_socket_default_timeout
+
+            set_socket_default_timeout(_get_float('SOCKET_TIMEOUT', 30.0))
+        except Exception:  # pragma: no cover - 兜底，不应阻断建池
+            logger.exception('设置 socket 默认超时失败')
+
+        configured = _get_int('MYSQL_MAX_CONNECTIONS', 0)
+        max_connections = configured or _default_pool_size()
+        if configured and configured < _default_pool_size():
+            logger.warning(
+                'MYSQL_MAX_CONNECTIONS=%s 小于并发消费者（%s 个 HTTP 线程 + %s 个监控线程），'
+                '高峰期会排队取连接，建议 >= %s',
+                configured, _get_int('GUNICORN_THREADS', 8),
+                getattr(Config, 'MONITOR_MAX_WORKERS', 6), _default_pool_size(),
+            )
+        socket_timeout = _get_float('SOCKET_TIMEOUT', 30.0)
+
         _POOL = PooledDB(
             creator=pymysql,          # 使用连接数据库的模块
-            maxconnections=_get_int('MYSQL_MAX_CONNECTIONS', 5),   # 连接池允许的最大连接数
-            mincached=_get_int('MYSQL_MIN_CACHED', 2),             # 初始化时至少创建的空闲连接数
-            maxcached=_get_int('MYSQL_MAX_CACHED', 3),             # 连接池中最多闲置的连接数
-            blocking=True,             # 无可用连接时阻塞等待
+            maxconnections=max_connections,                  # 连接池允许的最大连接数
+            mincached=_get_int('MYSQL_MIN_CACHED', 2),       # 初始化时至少创建的空闲连接数
+            maxcached=_get_int('MYSQL_MAX_CACHED', 3),       # 连接池中最多闲置的连接数
+            blocking=False,            # 池满时抛 TooManyConnections，等待交给 database.get_connection 限时
             setsession=[],              # 开始会话前执行的命令列表
             ping=1,                     # 从连接池取连接时 ping 一次，避免拿到已失效的死连接
+            failures=(pymysql.err.OperationalError, pymysql.err.InterfaceError),
+            connect_timeout=_get_float('MYSQL_CONNECT_TIMEOUT', 10.0),
+            read_timeout=_get_float('MYSQL_READ_TIMEOUT', socket_timeout),
+            write_timeout=_get_float('MYSQL_WRITE_TIMEOUT', socket_timeout),
             host=_get_str('MYSQL_HOST', '127.0.0.1'),
             port=_get_int('MYSQL_PORT', 3306),
             user=_get_str('MYSQL_USER', 'root'),
@@ -172,10 +225,11 @@ def get_pool():
             database=_get_str('MYSQL_DATABASE', 'stockdb'),
             charset=_get_str('MYSQL_CHARSET', 'utf8mb4'),
         )
-        logger.info('MySQL 连接池已创建: %s:%s/%s',
+        logger.info('MySQL 连接池已创建: %s:%s/%s maxconnections=%s',
                     _get_str('MYSQL_HOST', '127.0.0.1'),
                     _get_int('MYSQL_PORT', 3306),
-                    _get_str('MYSQL_DATABASE', 'stockdb'))
+                    _get_str('MYSQL_DATABASE', 'stockdb'),
+                    max_connections)
     return _POOL
 
 
@@ -232,6 +286,17 @@ class Config:
     SHUTDOWN_TIMEOUT = _get_float('SHUTDOWN_TIMEOUT', 5.0)
     # 全局 socket 默认超时（秒）。pysnowball 未传 timeout，长时间挂起会导致线程无法退出
     SOCKET_TIMEOUT = _get_float('SOCKET_TIMEOUT', 30.0)
+    # 取数据库连接的等待上限（秒）：超时报错，不再无限排队（2026-10-30 假死修复）
+    MYSQL_POOL_WAIT_TIMEOUT = _get_float('MYSQL_POOL_WAIT_TIMEOUT', 10.0)
+    # MySQL 连接的 TCP keepalive：容器网桥 / 跨网段访问时，中间设备会**静默回收**空闲连接
+    # （MySQL 侧是 Sleep，应用侧一发请求就永远等不到响应）。keepalive 让内核在空闲期
+    # 主动探测，死连接会被尽快判定断开，配合连接池 ping=1 取连接时即可发现并重连。
+    MYSQL_TCP_KEEPALIVE = _get_bool('MYSQL_TCP_KEEPALIVE', True)
+    MYSQL_KEEPALIVE_IDLE = _get_int('MYSQL_KEEPALIVE_IDLE', 60)      # 空闲多久开始探测（秒）
+    MYSQL_KEEPALIVE_INTERVAL = _get_int('MYSQL_KEEPALIVE_INTERVAL', 30)
+    MYSQL_KEEPALIVE_COUNT = _get_int('MYSQL_KEEPALIVE_COUNT', 3)
+    # 监控线程等待「同一代码共享结果」的上限（秒），须大于 FETCH_MAX_DELAY + 网络耗时
+    MONITOR_SHARED_WAIT_TIMEOUT = _get_float('MONITOR_SHARED_WAIT_TIMEOUT', 900.0)
 
     # 告警冷却：同一订单同一告警类型在该秒数内不重复记录与重复发信
     ALARM_COOLDOWN_SECONDS = _get_int('ALARM_COOLDOWN_SECONDS', 14400)

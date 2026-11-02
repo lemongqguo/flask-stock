@@ -9,7 +9,7 @@
 
 - **禁止**在 `config.py` 或任何代码里新增明文密码、SECRET_KEY、SMTP 授权码、第三方 Token。
 - 新增配置项一律走 `os.environ.get(...)` 读取，并在 `config.py` 给出无敏感信息的默认值；同时在 `PROJECT_WIKI.md` 的配置章节登记。
-- 不得把 `stockenv/`、`logs/`、`__pycache__`、`*.pyc`、`.env` 提交进仓库（M1 需补 `.gitignore`）。
+- 不得把 `stockvenv/`、`stockenv/`、`logs/`、`__pycache__`、`*.pyc`、`.env` 提交进仓库（`.gitignore` 已于 2026-10-27 补齐）。
 - 现有的 [D-01 明文凭据](../PROGRESS.md) 属待修复项；修复前，**不要把 `config.py` 的当前内容贴到任何对话、Issue 或文档中**。
 - 涉及密钥的示例一律写成 `<your-password>` 占位符。
 
@@ -69,8 +69,8 @@
 ## 8. 依赖与环境
 
 - 新增第三方依赖必须写入 `requirements.txt` 并锁定版本，同时在 `PROJECT_WIKI.md` 技术栈表中登记。
-- Python 目标版本 3.9；注意 pandas/numpy 二进制兼容（见 `PROJECT_WIKI.md` 常见问题）。
-- 不改动 `stockenv/` 目录内容。
+- Python 目标版本 **3.12**（2026-10-27 起，随 numpy 2.5 / pandas 3.1 对齐）；注意 pandas/numpy 二进制兼容（见 `PROJECT_WIKI.md` 常见问题）。
+- 开发与跑测试统一使用项目根目录的 `stockvenv/`（Windows 上是历史资料里的 `stockenv/`）；**不改动虚拟环境目录内容**。
 
 ## 9. 文档一致性
 

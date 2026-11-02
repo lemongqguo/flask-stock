@@ -210,9 +210,10 @@ a { color: inherit; text-decoration: none; }
 .side-collapsed .nav-item { justify-content: center; }
 .side-collapsed .nav-group-label { justify-content: center; padding: 0; }
 
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* min-height 让主区至少占满一屏：内容区才能拿到剩余高度（大屏底部不留空白的前提） */
+.main { flex: 1; min-width: 0; min-height: 100vh; display: flex; flex-direction: column; }
 .topbar {
-  height: 60px; display: flex; align-items: center; gap: 14px; padding: 0 24px;
+  height: 60px; display: flex; align-items: center; gap: 14px; padding: 0 clamp(16px, 1.5vw, 40px);
   border-bottom: 1px solid var(--border-soft);
   background: color-mix(in srgb, var(--bg) 78%, transparent);
   backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 20;
@@ -250,7 +251,23 @@ a { color: inherit; text-decoration: none; }
 .user-menu-list a { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 7px; font-size: 13px; color: var(--text-2); }
 .user-menu-list a:hover { background: var(--surface-2); color: var(--text); }
 
-.content { padding: 24px; max-width: 1560px; width: 100%; }
+/* 内容区随视口自适应：不再固定 1560px 上限（大屏右侧会留出一条空白），
+   内边距跟着视口缩放；纵向用 flex 列 + 撑满剩余高度，
+   配合 `.card-fill` 把主卡片一直拉到窗口底部。 */
+.content {
+  padding: clamp(16px, 1.2vw, 30px) clamp(16px, 1.5vw, 40px);
+  width: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* 列表 / 时间线的主卡片填满剩余高度：行高保持自然，多出来的空间留在卡片内，
+   分页条贴住卡片底部，避免大屏上"卡片悬在半屏、下面一大片空"的观感。 */
+.card-fill { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.card-fill > .table-wrap,
+.card-fill > .timeline { flex: 1 1 auto; }
+.card-fill > .pager { margin-top: auto; }
 
 /* ------------------------------ Flash 提示 ------------------------------ */
 .flashes { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
@@ -571,6 +588,48 @@ tbody tr:hover .row-actions { opacity: 1; }
 .ind-range-foot { margin-top: 5px; font-size: 11.5px; color: var(--muted); }
 .ind-flags { display: flex; gap: 5px; flex-wrap: wrap; }
 .ind-flags .type-badge { cursor: default; }
+
+/* 组合信号「四点指示器」：一颗点 = 一条判定，命中点亮成自己的颜色并呼吸，悬停看明细 */
+.combo-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ind-dots { display: inline-flex; align-items: center; gap: 6px; }
+.ind-dot {
+  position: relative; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--surface-3); border: 1px solid var(--border);
+  cursor: default; transition: .16s var(--ease);
+}
+/* 四颗点各一个色相：一眼能看出命中的是哪一条，不必挨个悬停。
+   未命中的点统一走灰底（--surface-3），只有命中点才上色。 */
+.ind-dots .ind-dot:nth-child(1) { --dot-c: var(--violet); }   /* 52 周新低 */
+.ind-dots .ind-dot:nth-child(2) { --dot-c: var(--accent); }   /* 52 周回撤 */
+.ind-dots .ind-dot:nth-child(3) { --dot-c: var(--info); }     /* 20 日跑输 */
+.ind-dots .ind-dot:nth-child(4) { --dot-c: var(--up); }       /* 5 日倍数 */
+.ind-dot:hover { border-color: var(--dot-c); }
+.ind-dot.on { background: var(--dot-c); border-color: transparent; animation: ind-dot-breathe 2.2s ease-in-out infinite; }
+/* 依次错开相位，四颗点此起彼伏而不是同步闪 */
+.ind-dot.on:nth-child(2) { animation-delay: .28s; }
+.ind-dot.on:nth-child(3) { animation-delay: .56s; }
+.ind-dot.on:nth-child(4) { animation-delay: .84s; }
+@keyframes ind-dot-breathe {
+  0%, 100% { opacity: .8; box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot-c) 50%, transparent); }
+  50% { opacity: 1; box-shadow: 0 0 0 5px transparent; }
+}
+
+/* 悬停气泡：position: fixed + JS 定位（见 theme.js initIndicatorDots）。
+   不用 ::after 是因为 `tbody td` 有 overflow:hidden、`.table-wrap` 是滚动容器，
+   气泡会被裁掉只剩一条边；fixed 浮层挂在 body 上，不受任何祖先裁剪。 */
+.ind-tip {
+  position: fixed; z-index: 200; left: 0; top: 0;
+  max-width: 280px; padding: 8px 11px; border-radius: 9px;
+  background: var(--surface); color: var(--text-2);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  font-size: 11.5px; font-weight: 500; line-height: 1.65; text-align: left;
+  white-space: pre-line; pointer-events: none;
+  opacity: 0; transform: translateY(3px); transition: .14s var(--ease);
+}
+.ind-tip.show { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .ind-dot.on { animation: none; }
+}
 
 /* ------------------------------ AI 分析（007） ------------------------------ */
 .ai-report { padding: 20px; }

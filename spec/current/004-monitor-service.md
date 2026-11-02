@@ -124,6 +124,11 @@
 
 - 全部配置来自环境变量（`.env` 或进程环境）；`config.validate_runtime_settings(strict=True)` 在生产启动时校验必填项，缺失即 `RuntimeError` 拒绝启动。
 - `utils/logging_config.setup_logging()`：控制台 + `logs/stock_app.log`（5MB × 10 轮转），**始终挂载文件 handler**（此前仅在非 debug 时挂载，等于从不落盘）。
+- **生产用 gunicorn 启动**（2026-10-27）：`gunicorn -c gunicorn.conf.py app:app`（`workers=1` + `worker_class='gthread'`）。
+  gunicorn 只 `import app`，`__main__` 不执行，故运行时副作用统一放在 **`app.prepare_runtime(strict=True, install_signals=False)`**，
+  由 `gunicorn.conf.py` 的 `post_fork` 调用；`worker_exit` 负责 `monitor.stop_monitoring()`。
+- 日志相关环境变量：`LOG_LEVEL`（级别，DEBUG 模式强制 DEBUG）、`LOG_DIR`（目录，默认**项目根目录下** `logs/`）、
+  `LOG_TO_FILE`（是否落盘）、`LOG_STREAM`（控制台输出流，默认 stdout；每次写入动态解析，兼容 `--capture-output` 的重定向）。
 - `monitor.stats` 累计 `rounds / checks / alarms / errors / last_round_at`。
 - `monitor.get_status()` 额外返回 `xueqiu_backoff_remaining` / `xueqiu_backoff_reason`。
 
@@ -145,6 +150,8 @@
 
 - **页面只读状态，不能启停**：侧栏底部与顶栏徽标已展示 `get_status()` 的实时状态（见 [008](../current/008-frontend-ui.md)），但**页面上不能启停监控**（需另立变更）。
 - **告警冷却状态在进程内存**：多进程部署（如 gunicorn 多 worker）时各进程独立计数，需要多进程时应把 `last_fired` 落到数据库或 Redis。
+  **2026-10-27 起生产部署强制单进程**：`gunicorn.conf.py` 固定 `workers = 1`（并发靠 gthread 线程池），
+  多进程还会让每个 worker 各起一个监控线程、雪球请求翻倍；要放开前必须先解决上述进程内状态。
 - **交易日历为"周一至周五"近似**：未接入法定节假日与临时休市安排，节假日仍会按交易时段轮询。
 - **Token 更新后需重启进程**才会立即恢复（否则等 `XUEQIU_BACKOFF_SECONDS` 退避自然结束）。
 - **Token 失效不会主动通知管理员**（仅本地日志提示）；如需邮件/钉钉告警请另立变更。

@@ -16,9 +16,9 @@ Flask Stock 是一个基于 Flask 框架开发的股票订单监控系统，主�
 | 后端框架 | Flask 2.3.3 |
 | 数据库 | MySQL (PyMySQL + DBUtils连接池) |
 | 前端 | 自建设计系统（CSS 变量 + 内联 SVG sprite，双主题）；Chart.js 4.4.1（K 线图唯一外部依赖） |
-| 数据分析 | Pandas 2.0.3 |
+| 数据分析 | Pandas 3.1.0（2026-10-27 由 2.0.3 对齐到实际安装版本） |
 | 数据源 | 雪球财经 (pysnowball) |
-| 部署 | Python 3.9 |
+| 部署 | Python 3.12 + gunicorn 26.2.0（单进程 gthread）；虚拟环境 `stockvenv/` |
 
 ### 1.3 项目目录结构
 ```
@@ -27,7 +27,9 @@ flask-stock/
 ├── config.py              # 配置文件
 ├── database.py            # 数据库初始化
 ├── requirements.txt       # 依赖清单
-├── start.sh               # 启动脚本
+├── .gitignore             # 排除虚拟环境 / .env / logs / 缓存
+├── gunicorn.conf.py       # gunicorn 启动配置（进程模型 / 日志 / 钩子）
+├── start.sh               # 启动脚本（默认 exec gunicorn，USE_GUNICORN=0 可退回）
 ├── models/                # 数据模型层
 │   ├── base.py            # 基础模型类
 │   ├── user.py            # 用户模型
@@ -602,13 +604,13 @@ else:
 
 ### 7.1 环境准备
 ```bash
-# 1. 安装Python 3.9+
+# 1. 确认 Python 3.12（numpy 2.5 / pandas 3.1 的最低要求；旧组合已在 2026-10-27 对齐）
 python --version
 
-# 2. 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux
-venv\Scripts\activate     # Windows
+# 2. 创建虚拟环境（本机已自带 stockvenv，可直接用）
+python -m venv stockvenv
+source stockvenv/bin/activate  # Linux
+stockvenv\Scripts\activate     # Windows
 
 # 3. 安装依赖
 pip install -r requirements.txt
@@ -621,24 +623,43 @@ python database.py
 ```
 
 ### 7.3 启动应用
-```bash
-# 开发模式
-python app.py
 
-# 生产模式 (使用start.sh)
+**必须单进程运行**（`gunicorn.conf.py` 已写死 `workers = 1`）：告警冷却（`utils/alarm_throttle`）、
+运行时 AI 密钥、后台监控线程都是**进程内内存状态**，多进程会让冷却失效、雪球请求翻倍，
+且每个进程各起一个监控线程。并发靠 gthread 线程池（默认 8）。
+
+```bash
+# 生产（推荐）：访问日志 / 错误日志 / 应用日志全部打到终端
+cd /opt/src/flask-stock
+./stockvenv/bin/gunicorn -c gunicorn.conf.py app:app     # 已装好依赖的虚拟环境
+# 或直接用 PATH 里的解释器
+gunicorn -c gunicorn.conf.py app:app
+
+# 常用覆盖
+BIND=0.0.0.0:8000 LOG_LEVEL=DEBUG GUNICORN_THREADS=16 gunicorn -c gunicorn.conf.py app:app
+
+# 容器 / 服务化入口（等数据库就绪 → 建表 → exec gunicorn）
 chmod +x start.sh
 ./start.sh
+USE_GUNICORN=0 ./start.sh     # 排障时退回开发服务器
+
+# 开发模式
+python app.py
 ```
+
+> gunicorn 只做 `import app`，不会执行 `app.py` 的 `__main__` 块；
+> 监控线程等运行时副作用统一收在 `app.prepare_runtime()`，由 `post_fork` 钩子调用。
 
 ### 7.4 Docker部署 (推荐)
 ```dockerfile
-FROM python:3.9-slim
+FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 EXPOSE 5000
-CMD ["python", "app.py"]
+# 日志不再重定向到文件，直接进容器输出，方便 docker logs 查看
+CMD ["/bin/sh", "-c", "mkdir -p /app/logs && exec /app/start.sh"]
 ```
 
 ```bash
@@ -650,21 +671,32 @@ docker run -d -p 5000:5000 --name stock-monitor flask-stock
 
 #### pandas/numpy版本冲突
 
-> 项目根目录自带的 `stockenv/`（Python 3.11 + numpy 1.24.3 + pandas 2.0.3）就是已验证可用的组合，
-> **开发与跑测试都请用 `stockenv\Scripts\python.exe`**。全局解释器若装了 numpy 2.x + pandas 1.x 系编译版本，
-> 会直接报 `ValueError: numpy.dtype size changed, may indicate binary incompatibility`。
+> **本机唯一受支持的解释器是项目根目录下的 `stockvenv/`**（Python 3.12 + numpy 2.5.4 + pandas 3.1.0，
+> 与 `requirements.txt` 完全对齐）：**开发与跑测试都请用 `./stockvenv/bin/python`**。
+> `requirements.txt` 里原本锁的 numpy 1.24.3 / pandas 2.0.3 是 Python 3.9 时代的组合，
+> 在 3.12 上无预编译 wheel，会退回源码编译并失败；2026-10-27 已对齐到实际安装版本。
+> 若用其他解释器，混装 numpy 2.x 与 pandas 1.x 系编译版本会报
+> `ValueError: numpy.dtype size changed, may indicate binary incompatibility`。
 
 ```bash
-# 解决二进制兼容性问题（仅供参考；勿改动 stockenv/ 的内容）
-pip uninstall pandas numpy -y
-pip install numpy==1.24.3
-pip install pandas==2.0.3
+# 重建一版干净环境（仅供参考；勿改动 stockvenv/ 的内容）
+python -m venv stockvenv
+./stockvenv/bin/python -m pip install -r requirements.txt
 ```
 
 #### 数据库连接问题
 - 检查MySQL服务状态
 - 验证用户名/密码/端口
 - 确认数据库已创建
+
+#### gunicorn 启动后看不到应用日志
+现象：容器/终端里只有 `[INFO] Booting worker`，之后一行应用日志都没有。
+排查顺序：
+1. 是否用 `gunicorn -c gunicorn.conf.py app:app` 启动？直接 `gunicorn app:app` 不会执行 `app.py` 的
+   `__main__`，监控线程根本没起来（也就没有持续日志）；
+2. 级别是不是 INFO：监控"在干活"的日志多是 `DEBUG`，临时用 `LOG_LEVEL=DEBUG` 看一轮；
+3. 是否还有校验失败导致 worker 反复重启：`prepare_runtime(strict=True)` 缺配置会抛错，看 error log 第一行；
+4. 日志仍会落盘到项目根目录下的 `logs/stock_app.log`（可用 `LOG_DIR` 改位置）。
 
 #### 雪球Token失效
 - 登录雪球网站获取新Token
