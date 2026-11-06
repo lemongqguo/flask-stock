@@ -325,17 +325,16 @@ class StockMonitor:
 
         try:
             value = producer()
+            if value is not None:
+                # 必须先发布结果再放行等待者；否则等待者可能读到空缓存并跳过自己的回写。
+                with self._round_lock:
+                    self._round_cache.setdefault(kind, {})[stock_code] = value
+            return value
         finally:
-            # 无论成败都要放行等待者，否则一次异常会把同伴永久挂住
+            # 无论成败都要放行等待者，否则一次异常会把同伴永久挂住。
             with self._round_lock:
                 self._round_pending.pop(key, None)
             waiter.set()
-
-        if value is None:
-            return None
-        with self._round_lock:
-            self._round_cache.setdefault(kind, {})[stock_code] = value
-        return value
 
     def get_stock_data(self, stock_code):
         """

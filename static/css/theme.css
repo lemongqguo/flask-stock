@@ -452,6 +452,15 @@ tbody tr:hover .row-ai:hover { color: var(--ai-hue); }
 .cell-avatar { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-soft); }
 .cell-name { font-weight: 600; line-height: 1.25; }
 .cell-code { font-size: 11.5px; color: var(--muted); letter-spacing: .5px; }
+/* 管理员视角：订单列表与指标监控的其他用户订单，在标的单元格左上角显示信息色圆点。 */
+.table-orders td.has-owner-marker,
+.table-indicator td.has-owner-marker { position: relative; }
+.table-orders .owner-marker,
+.table-indicator .owner-marker {
+  position: absolute; top: 7px; left: 7px; z-index: 1;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--info); box-shadow: 0 0 0 3px var(--info-soft);
+}
 .price { font-size: 15px; font-weight: 700; }
 
 /* 订单列表十列全定宽（colgroup：300 + 992 = 1292），min-width 必须等于定宽之和——

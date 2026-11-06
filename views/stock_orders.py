@@ -69,10 +69,17 @@ def stock_list():
     lows_52w = StockKline.get_low_52w_batch([stock['id'] for stock in stocks])
 
     # 为每个股票添加K线信号信息
+    is_admin = session.get('role') == 'admin'
+    current_user_id = session.get('user_id')
     for stock in stocks:
         signal_type = StockKline.get_latest_signal(stock['id'])
         stock['kline_signal'] = signal_type
         stock['low_52w'] = lows_52w.get(stock['id'])
+        stock['show_owner_marker'] = (
+            is_admin
+            and stock.get('user_id') is not None
+            and stock['user_id'] != current_user_id
+        )
     
     # 计算总页数
     total_pages = math.ceil(total_count / per_page) if per_page else 0
@@ -520,7 +527,14 @@ def indicator_list():
     rows = []
     summary = {'total': total_count, 'collected': 0, 'combo_hits': 0,
                'low_drawdown_hits': 0, 'latest_date': None}
+    is_admin = session.get('role') == 'admin'
+    current_user_id = session.get('user_id')
     for stock in stocks:
+        stock['show_owner_marker'] = (
+            is_admin
+            and stock.get('user_id') is not None
+            and stock['user_id'] != current_user_id
+        )
         indicator = latest_rows.get(stock['id'])
         if not indicator:
             rows.append({'stock': stock, 'indicator': None, 'combo': False,

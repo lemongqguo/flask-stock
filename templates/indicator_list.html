@@ -145,7 +145,10 @@
             {% set stock = row.stock %}
             {% set ind = row.indicator %}
                 <tr>
-                    <td>
+                    <td class="{{ 'has-owner-marker' if stock.show_owner_marker else '' }}">
+                        {% if stock.show_owner_marker %}
+                        <span class="owner-marker" role="img" aria-label="其他普通用户的订单" title="其他普通用户的订单"></span>
+                        {% endif %}
                         {# 标的列吸收剩余宽度：名称靠左，右端放「AI 分析」快捷入口（与订单列表同款） #}
                         <div class="cell-with-action">
                             <div class="cell-primary">

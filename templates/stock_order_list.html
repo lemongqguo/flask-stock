@@ -113,7 +113,10 @@
             <tbody id="rows">
             {% for stock in stocks %}
             <tr data-id="{{ stock.id }}" data-status="{{ stock.status }}" data-alarm="{{ 'alarm' if stock.is_alarm_active == 1 else '' }}">
-                <td>
+                <td class="{{ 'has-owner-marker' if stock.show_owner_marker else '' }}">
+                    {% if stock.show_owner_marker %}
+                    <span class="owner-marker" role="img" aria-label="其他普通用户的订单" title="其他用户的stock"></span>
+                    {% endif %}
                     {# 标的列吸收剩余宽度：左侧名称，右侧空档放「AI 分析」快捷入口（跳该标的的 AI 页） #}
                     <div class="cell-with-action">
                         <div class="cell-primary">
