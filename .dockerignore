@@ -1,0 +1,12 @@
+# 与 .gitignore 同思路：虚拟环境与凭据绝不进镜像
+stockvenv/
+stockenv/
+venv/
+.git/
+__pycache__/
+*.py[cod]
+.env
+*.log
+logs/
+.pytest_cache/
+Dockerfile

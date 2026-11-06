@@ -1,0 +1,75 @@
+# 测试相关依赖（可选，测试本身也兼容标准库 unittest）
+# 安装：pip install -r requirements-dev.txt
+-r requirements.txt
+
+Flask==2.3.3
+Flask-WTF==1.1.1
+PyMySQL==1.1.0
+DBUtils==3.1.2
+Werkzeug==2.3.7
+requests==2.31.0
+numpy>=1.26.0
+pandas>=2.2.0
+pysnowball==0.1.8
+python-dotenv==1.2.4
+gunicorn==26.2.0
+
+# 用例基于 unittest.TestCase，因此 pytest 仅作为更强的 runner/报告器，
+# 不装也能通过 `python -m unittest discover -s tests -t .` 运行。
+pytest>=7.4
+
+# 代码质量（可选，按需启用）
+flake8>=6.1
+
+########################################################################
+### 生产环境安装部署
+# 警告：Flask 内置的开发服务器（Werkzeug）性能低且不安全，严禁直接用于生产环境。
+# 生产使用 gunicorn，配置见项目根目录的 gunicorn.conf.py。
+#
+# 安装：
+#   pip install -r requirements.txt        # requirements.txt 里已经包含 gunicorn
+#
+# 启动（在项目根目录执行，日志打到终端）：
+#   gunicorn -c gunicorn.conf.py app:app
+#
+# 注意：本项目**必须单进程**（gunicorn.conf.py 里已固定 workers = 1），
+# 不要再加 -w 4——告警冷却、运行时 AI 密钥、监控线程都是进程内状态，
+# 多进程会让它们全部失效，且每个 worker 各起一个监控线程。
+# 需要更高并发时改线程池：GUNICORN_THREADS=16 gunicorn -c gunicorn.conf.py app:app
+
+Flask==2.3.3
+Flask-WTF==1.1.1
+PyMySQL==1.1.0
+DBUtils==3.1.2
+Werkzeug==2.3.7
+requests==2.31.0
+numpy>=1.26.0
+pandas>=2.2.0
+pysnowball==0.1.8
+python-dotenv==1.2.4
+gunicorn==26.2.0
+
+# cd /opt/src/buildDocker && docker build -t flask-stock:v1 .
+# tail -fn 100 /opt/flask-stock/logs/stdout/flask-stock.stdout
+docker run -d \
+  -p 5000:5000 \
+  --restart always \
+  --name flask-stock \
+  -v /opt/flask-stock/config/config.py:/app/config.py \
+  -v /opt/flask-stock/logs:/app/logs \
+  -e TZ=Asia/Shanghai \
+flask-stock:v2
+
+# 新版本的启动方式，除了配置文件为.env变量其他不变
+docker run -d \
+  -p 5000:5000 \
+  --restart always \
+  --name flask-stock \
+  -v /opt/flask-stock/config/.env:/app/.env \
+  -v /opt/flask-stock/logs:/app/logs \
+  -e TZ=Asia/Shanghai \
+flask-stock:v2026
+
+
+
+

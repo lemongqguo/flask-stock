@@ -1,0 +1,44 @@
+# 本仓库的忽略规则。
+# 缺失时曾导致虚拟环境 stockvenv/、本地凭据 .env、日志 logs/ 被一并提交。
+# 注意：.env.example 是配置模板，必须保留（见下面的 `!` 例外）。
+
+# --- Python 字节码与构建产物 ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- 虚拟环境（本机使用 stockvenv/，历史资料里的 stockenv/ 一并排除）---
+stockvenv/
+stockenv/
+venv/
+.venv/
+env/
+
+# --- 凭据与本地配置 ---
+.env
+*.pem
+*.key
+!.env.example
+
+# --- 运行产物 ---
+logs/
+*.log
+gunicorn_error.log
+gunicorn_access.log
+.pytest_cache/
+.coverage
+htmlcov/
+.cache/
+
+# --- 编辑器 / IDE / 系统 ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

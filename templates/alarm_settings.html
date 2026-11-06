@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+
+{% block title %}告警设置 - 股池监控台{% endblock %}
+{% block crumb %}告警设置{% endblock %}
+
+{# DECIMAL 列出来是 '5.0000' 这种定长小数，表单里要显示成 '5' #}
+{% macro numval(v) -%}{{ "%.6g"|format(v|float) }}{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1 class="page-title">告警设置</h1>
+        <p class="page-desc">搜索标的调整阈值 · 保存后下一轮询周期生效</p>
+    </div>
+</div>
+
+<!-- 搜索框 + 空态提示：未选标的时整体居中 -->
+<div class="card card-transparent {{ 'alarm-hero' if not stocks_with_settings }}">
+    <div style="width:100%;max-width:560px;text-align:center">
+        <!-- 搜索框 -->
+        <div class="ai-combo" data-alarm-search data-url="{{ url_for('stock.alarm_search_api') }}"
+             data-min="1" data-current="{{ stock_id or '' }}">
+            <svg class="ai-combo-icon" width="16" height="16"><use href="#i-search"/></svg>
+            <input class="ai-combo-input" data-alarm-input type="search" autocomplete="off"
+                   placeholder="搜索股票名称或代码，如 600519 / 茅台"
+                   aria-label="搜索标的">
+            <button type="button" class="ai-combo-clear" data-alarm-clear hidden aria-label="清空搜索">
+                <svg width="12" height="12"><use href="#i-close"/></svg>
+            </button>
+            <div class="ai-combo-menu" data-alarm-menu hidden role="listbox"></div>
+        </div>
+
+        {% if not stocks_with_settings %}
+        <!-- 空态提示 -->
+        <div class="alarm-empty" style="margin-top:32px">
+            <h3 style="margin:0 0 8px;font-size:16px">先选一只标的</h3>
+            <p style="margin:0;color:var(--muted)">
+                在上方搜索框输入<b>名称或代码</b>，或到
+                <a href="{{ url_for('stock.stock_list') }}" style="color:var(--accent);font-weight:600">订单列表</a>
+                点行内的「告警设置」直接带入。
+            </p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if stocks_with_settings %}
+<div class="alarm-layout" style="margin-top:24px">
+    <!-- 阈值面板（每标的一个，JS 切换） -->
+    {% for item in stocks_with_settings %}
+    {% set stock = item.stock %}
+    {% set warehouse = item.warehouse %}
+    {% set pe_record = item.pe_record %}
+    {% set pb_record = item.pb_record %}
+    {% set indicator_config = item.indicator_config %}
+    {# tab 默认 = 价格；保存完指标阈值会带 ?tab=indicator 回到本页签 #}
+    {% set active_tab = request.args.get('tab', 'price') %}
+    <div class="card {{ 'hidden' if not loop.first }}" data-stock-panel="{{ stock.id }}">
+        <div class="tabs" data-tabs>
+            <button type="button" class="tab {{ 'on' if active_tab == 'price' }}" data-tab="price">价格告警</button>
+            <button type="button" class="tab {{ 'on' if active_tab == 'pe' }}" data-tab="pe">PE 告警</button>
+            <button type="button" class="tab {{ 'on' if active_tab == 'pb' }}" data-tab="pb">PB 告警</button>
+            <button type="button" class="tab {{ 'on' if active_tab == 'indicator' }}" data-tab="indicator" title="按标的覆盖指标阈值，留空继承全局">指标告警</button>
+        </div>
+
+        <div class="metric-head">
+            <div>
+                <div class="cell-name" style="font-size:16px">{{ stock.stock_name }}</div>
+                <div class="cell-code num">{{ stock.stock_code }}</div>
+            </div>
+            <div class="metric-current">
+                <div class="k">现价</div>
+                <div class="v num">{{ "%.2f"|format(stock.current_price or 0) }}</div>
+            </div>
+            <div class="metric-current">
+                <div class="k">当前 PE</div>
+                <div class="v num">{{ "%.2f"|format(stock.current_pe or 0) }}</div>
+            </div>
+            <div class="metric-current">
+                <div class="k">当前 PB</div>
+                <div class="v num">{{ "%.2f"|format(stock.current_pb or 0) }}</div>
+            </div>
+        </div>
+
+        <!-- 价格告警 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="price" class="{{ 'hidden' if active_tab != 'price' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="warehouse">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="grid-4">
+                    <div class="field">
+                        <label>目标卖出价</label>
+                        <input class="input" type="number" step="0.01" name="sell_rate" id="sell_rate_{{ stock.id }}"
+                               value="{{ warehouse.sell_rate if warehouse and warehouse.sell_rate else '' }}"
+                               placeholder="达到触发卖出提醒">
+                    </div>
+                    <div class="field">
+                        <label>第一档价格</label>
+                        <input class="input" type="number" step="0.01" name="stock_valueone" id="stock_valueone_{{ stock.id }}"
+                               value="{{ warehouse.stock_valueone if warehouse and warehouse.stock_valueone else '' }}"
+                               placeholder="跌破触发">
+                    </div>
+                    <div class="field">
+                        <label>第二档价格</label>
+                        <input class="input" type="number" step="0.01" name="stock_valuetwo" id="stock_valuetwo_{{ stock.id }}"
+                               value="{{ warehouse.stock_valuetwo if warehouse and warehouse.stock_valuetwo else '' }}"
+                               placeholder="跌破触发">
+                    </div>
+                    <div class="field">
+                        <label>第三档价格</label>
+                        <input class="input" type="number" step="0.01" name="stock_valuethree" id="stock_valuethree_{{ stock.id }}"
+                               value="{{ warehouse.stock_valuethree if warehouse and warehouse.stock_valuethree else '' }}"
+                               placeholder="跌破触发">
+                    </div>
+                </div>
+                    <div class="field" style="margin-top:14px">
+                        <div class="memo-head">
+                            <label>备注</label>
+                            <button type="button" class="memo-toggle" data-memo-toggle
+                                    title="支持 # 标题 / **加粗** / 列表 / 链接 / ![图片](https://..) 和 Emoji">预览</button>
+                        </div>
+                        <textarea class="input" name="memo" id="memo_{{ stock.id }}" rows="2"
+                                  placeholder="详细信息备注">{{ warehouse.memo if warehouse else '' }}</textarea>
+                        <div class="memo-preview" data-memo-preview hidden></div>
+                    </div>
+            </div>
+        </form>
+
+        <!-- PE 告警 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="pe" class="{{ 'hidden' if active_tab != 'pe' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="pe">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="grid-3">
+                    <div class="field">
+                        <label>PE · 第一档</label>
+                        <input class="input" type="number" step="0.01" name="pe_valueone" id="pe_valueone_{{ stock.id }}"
+                               value="{{ pe_record.pe_valueone if pe_record and pe_record.pe_valueone else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PE · 第二档</label>
+                        <input class="input" type="number" step="0.01" name="pe_valuetwo" id="pe_valuetwo_{{ stock.id }}"
+                               value="{{ pe_record.pe_valuetwo if pe_record and pe_record.pe_valuetwo else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PE · 第三档</label>
+                        <input class="input" type="number" step="0.01" name="pe_valuethree" id="pe_valuethree_{{ stock.id }}"
+                               value="{{ pe_record.pe_valuethree if pe_record and pe_record.pe_valuethree else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                </div>
+                <div class="field" style="margin-top:14px">
+                    <div class="memo-head">
+                        <label>备注</label>
+                        <button type="button" class="memo-toggle" data-memo-toggle
+                                title="支持 # 标题 / **加粗** / 列表 / 链接 / ![图片](https://..) 和 Emoji">预览</button>
+                    </div>
+                    <textarea class="input" name="pe_memo" id="pe_memo_{{ stock.id }}" rows="2"
+                              placeholder="估值判断依据">{{ pe_record.memo if pe_record else '' }}</textarea>
+                    <div class="memo-preview" data-memo-preview hidden></div>
+                </div>
+            </div>
+        </form>
+
+        <!-- PB 告警 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="pb" class="{{ 'hidden' if active_tab != 'pb' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="pb">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="grid-3">
+                    <div class="field">
+                        <label>PB · 第一档</label>
+                        <input class="input" type="number" step="0.01" name="pb_valueone" id="pb_valueone_{{ stock.id }}"
+                               value="{{ pb_record.pb_valueone if pb_record and pb_record.pb_valueone else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PB · 第二档</label>
+                        <input class="input" type="number" step="0.01" name="pb_valuetwo" id="pb_valuetwo_{{ stock.id }}"
+                               value="{{ pb_record.pb_valuetwo if pb_record and pb_record.pb_valuetwo else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                    <div class="field">
+                        <label>PB · 第三档</label>
+                        <input class="input" type="number" step="0.01" name="pb_valuethree" id="pb_valuethree_{{ stock.id }}"
+                               value="{{ pb_record.pb_valuethree if pb_record and pb_record.pb_valuethree else '' }}"
+                               placeholder="低于触发">
+                    </div>
+                </div>
+                <div class="field" style="margin-top:14px">
+                    <div class="memo-head">
+                        <label>备注</label>
+                        <button type="button" class="memo-toggle" data-memo-toggle
+                                title="支持 # 标题 / **加粗** / 列表 / 链接 / ![图片](https://..) 和 Emoji">预览</button>
+                    </div>
+                    <textarea class="input" name="pb_memo" id="pb_memo_{{ stock.id }}" rows="2"
+                              placeholder="估值判断依据">{{ pb_record.memo if pb_record else '' }}</textarea>
+                    <div class="memo-preview" data-memo-preview hidden></div>
+                </div>
+            </div>
+        </form>
+
+        <!-- 指标告警（006 指标监控）：留空 = 继承全局 IND_* 阈值 -->
+        <form method="POST" action="{{ url_for('stock.alarm_settings') }}" data-body="indicator" class="{{ 'hidden' if active_tab != 'indicator' }}">
+            <input type="hidden" name="stock_id" value="{{ stock.id }}">
+            <input type="hidden" name="alarm_type" value="indicator">
+            <div class="panel" style="border-bottom:1px solid var(--border-soft)">
+                <div class="hint-inline">
+                    <svg width="15" height="15"><use href="#i-info"/></svg>
+                    <div>以下为 <b>{{ stock.stock_name }}</b> 的专属阈值，<b>留空即继承全局值</b>（占位提示里的数就是全局值）。
+                        保存后下一轮询周期生效，指标类告警单独按 {{ indicator_cooldown_hours }} 小时冷却。</div>
+                </div>
+                <div class="section-title">长期指标</div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label>52 周新低阈值（%）</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="100" name="low52w_near_pct"
+                               id="low52w_near_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.low52w_near_pct) if indicator_config and indicator_config.low52w_near_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.low52w_near_pct }}">
+                    </div>
+                    <div class="field">
+                        <label>52 周回撤阈值（%）</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="100" name="drawdown_52w_pct"
+                               id="drawdown_52w_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.drawdown_52w_pct) if indicator_config and indicator_config.drawdown_52w_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.drawdown_52w_pct }}">
+                    </div>
+                </div>
+                <div class="section-title">短期指标</div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label>20 日跑输（百分点）</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="100" name="rs20_pct"
+                               id="rs20_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs20_pct) if indicator_config and indicator_config.rs20_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs20_pct }}">
+                    </div>
+                    <div class="field">
+                        <label>5 日倍数阈值</label>
+                        <input class="input" type="number" step="0.1" min="0.1" max="20" name="rs5_ratio"
+                               id="rs5_ratio_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs5_ratio) if indicator_config and indicator_config.rs5_ratio is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs5_ratio }}">
+                    </div>
+                    <div class="field">
+                        <label>护栏 · 个股 5 日最小跌幅（%）</label>
+                        <input class="input" type="number" step="0.1" min="0" max="100" name="rs5_min_drop_pct"
+                               id="rs5_min_drop_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs5_min_drop_pct) if indicator_config and indicator_config.rs5_min_drop_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs5_min_drop_pct }}">
+                    </div>
+                    <div class="field">
+                        <label>护栏 · 基准 5 日最小跌幅（%）</label>
+                        <input class="input" type="number" step="0.1" min="0" max="100" name="rs5_min_bench_drop_pct"
+                               id="rs5_min_bench_drop_pct_{{ stock.id }}"
+                               value="{{ numval(indicator_config.rs5_min_bench_drop_pct) if indicator_config and indicator_config.rs5_min_bench_drop_pct is not none else '' }}"
+                               placeholder="全局 {{ global_thresholds.rs5_min_bench_drop_pct }}">
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 统一保存按钮 -->
+<div class="card" style="margin-top:16px">
+    <div class="panel-actions" style="justify-content:flex-end;gap:12px">
+        <span class="autosave">留空表示不监控该档位 / 继承全局配置</span>
+        <button type="button" class="btn btn-primary" id="save-all-btn">
+            <svg width="15" height="15"><use href="#i-check"/></svg> 保存所有设置
+        </button>
+    </div>
+</div>
+{% endif %}
+
+<script>
+/* ---------------- 告警设置页标的搜索（data-alarm-search） ---------------- */
+(function() {
+  const box = document.querySelector('[data-alarm-search]');
+  if (!box) return;
+
+  const input = box.querySelector('[data-alarm-input]');
+  const menu = box.querySelector('[data-alarm-menu]');
+  const clearBtn = box.querySelector('[data-alarm-clear]');
+  const url = box.dataset.url || '/stock/alarm/api/search';
+  const minLen = parseInt(box.dataset.min || '1', 10);
+  const currentId = box.dataset.current || '';
+  if (!input || !menu) return;
+
+  const DELAY = 220;
+  let timer = null;
+  let seq = 0;
+  let items = [];
+  let cursor = -1;
+
+  function open() { menu.hidden = false; box.classList.add('is-open'); }
+  function close() { menu.hidden = true; box.classList.remove('is-open'); cursor = -1; }
+
+  function state(text, tone) {
+    menu.innerHTML = '<div class="ai-combo-state' + (tone ? ' ' + tone : '') + '">' + text + '</div>';
+    open();
+  }
+
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function render(list, truncated) {
+    items = list || [];
+    cursor = -1;
+    if (!items.length) { state('没有匹配的标的，换个名称或代码试试'); return; }
+    menu.innerHTML = items.map((it, i) =>
+      '<a class="ai-opt' + (String(it.id) === currentId ? ' on' : '') + '" href="' + esc(it.url) + '" data-idx="' + i + '">'
+      + '<span class="ai-opt-avatar">' + esc((it.name || '?').slice(0, 1)) + '</span>'
+      + '<span class="ai-opt-main"><span class="ai-opt-name">' + esc(it.name) + '</span>'
+      + '<span class="ai-opt-code num">' + esc(it.code) + '</span></span>'
+      + '<span class="ai-opt-price num' + (it.price === null ? ' muted' : '') + '">'
+      + (it.price === null ? '—' : Number(it.price).toFixed(2)) + '</span></a>').join('')
+      + (truncated ? '<div class="ai-combo-state">只显示前 ' + items.length + ' 条，请输入更完整的关键字</div>' : '');
+    open();
+  }
+
+  function move(step) {
+    const opts = menu.querySelectorAll('.ai-opt');
+    if (!opts.length) return;
+    cursor = (cursor + step + opts.length) % opts.length;
+    opts.forEach((el, i) => el.classList.toggle('on', i === cursor));
+    opts[cursor].scrollIntoView({ block: 'nearest' });
+  }
+
+  function run() {
+    const q = input.value.trim();
+    if (clearBtn) clearBtn.hidden = !q;
+    if (q.length < minLen) { close(); return; }
+
+    const mine = ++seq;
+    state('搜索中…');
+    fetch(url + '?q=' + encodeURIComponent(q), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(resp => (resp.ok ? resp.json() : Promise.reject(new Error('HTTP ' + resp.status))))
+      .then(data => { if (mine === seq) render(data.items, data.truncated); })
+      .catch(() => { if (mine === seq) state('搜索失败，请稍后重试', 'warn'); });
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(run, DELAY);
+  });
+  input.addEventListener('focus', () => { if (input.value.trim().length >= minLen) run(); });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!menu.hidden) move(1); else run(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (e.key === 'Enter') {
+      const target = menu.querySelector('.ai-opt.on') || menu.querySelector('.ai-opt');
+      if (target) { e.preventDefault(); window.location.href = target.getAttribute('href'); }
+    } else if (e.key === 'Escape') { close(); input.blur(); }
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      clearBtn.hidden = true;
+      close();
+      input.focus();
+    });
+  }
+
+  document.addEventListener('click', e => { if (!box.contains(e.target)) close(); });
+})();
+
+/* ---------------- 统一保存按钮 ---------------- */
+(function() {
+  const saveBtn = document.getElementById('save-all-btn');
+  if (!saveBtn) return;
+
+  saveBtn.addEventListener('click', async () => {
+    const originalHtml = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<svg width="15" height="15" class="spin"><use href="#i-refresh"/></svg> 保存中…';
+
+    const forms = document.querySelectorAll('.alarm-layout form[data-body]');
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const form of forms) {
+      try {
+        const formData = new FormData(form);
+        const response = await fetch(form.action, {
+          method: 'POST',
+          body: formData,
+          headers: { 'X-Requested-With': 'fetch' }
+        });
+
+        if (response.ok || response.redirected) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch (err) {
+        errorCount++;
+        console.error('保存失败:', err);
+      }
+    }
+
+    // 显示结果
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = originalHtml;
+
+    if (errorCount === 0) {
+      alert('保存成功！');
+      // 刷新页面以显示最新数据
+      window.location.reload();
+    } else {
+      alert(`保存完成：${successCount} 项成功，${errorCount} 项失败`);
+    }
+  });
+})();
+</script>
+{% endblock %}
