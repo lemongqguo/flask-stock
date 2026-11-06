@@ -220,7 +220,7 @@ LOG_LEVEL=INFO
 如果不需要重新构建，可以直接拉取指定版本：
 
 ```bash
-docker pull registry.cn-shanghai.aliyuncs.com/ggq126/stock:v20261105
+docker pull registry.cn-shanghai.aliyuncs.com/xxx126/stock:v20261105
 ```
 
 ### 4.2 从源码构建镜像
@@ -233,7 +233,7 @@ cd /opt/buildflask/aaa
 docker build \
   --pull \
   -f flask-stock/Dockerfile \
-  -t registry.cn-shanghai.aliyuncs.com/ggq126/stock:v20261105 \
+  -t registry.cn-shanghai.aliyuncs.com/xxx126/stock:v20261105 \
   .
 ```
 
@@ -258,7 +258,7 @@ flask-stock/venv/
 
 ```bash
 docker image inspect \
-  registry.cn-shanghai.aliyuncs.com/ggq126/stock:v20261105 \
+  registry.cn-shanghai.aliyuncs.com/xxx126/stock:v20261105 \
   --format '{{.Id}} {{.Created}}'
 ```
 
@@ -266,7 +266,7 @@ docker image inspect \
 
 ```bash
 docker login registry.cn-shanghai.aliyuncs.com
-docker push registry.cn-shanghai.aliyuncs.com/ggq126/stock:v20261105
+docker push registry.cn-shanghai.aliyuncs.com/xxx126/stock:v20261105
 ```
 
 正式版本建议使用不可变的新标签，不要在生产环境反复覆盖同一个标签。
@@ -283,7 +283,7 @@ docker run -d \
   -v /opt/flask-stock/config/.env:/app/.env \
   -v /opt/flask-stock/logs:/app/logs \
   -e TZ=Asia/Shanghai \
-  registry.cn-shanghai.aliyuncs.com/ggq126/stock:v20261105
+  registry.cn-shanghai.aliyuncs.com/xxx126/stock:v20261105
 ```
 
 挂载说明：
@@ -404,7 +404,7 @@ tail -f /opt/flask-stock/logs/stock_app.log
 # 1. 先按第8节完成数据库备份，并另行妥善保存.env
 
 # 2. 拉取新版本
-docker pull registry.cn-shanghai.aliyuncs.com/ggq126/stock:新版本标签
+docker pull registry.cn-shanghai.aliyuncs.com/xxx126/stock:新版本标签
 
 # 3. 停止并删除旧应用容器；不会删除外部MySQL数据
 docker stop flask-stock
