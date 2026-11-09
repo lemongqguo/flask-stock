@@ -1,0 +1,45 @@
+# xqtoken是自动更新xueqiutoken的脚步，且会重启docker容器
+# 在宿主机上创建计划任务，之所以放在项目里面是为了记录方便，使用的时候可以复制到宿主机即可
+10 9 * * 4  cd /opt/flask-stock/config && ./update-xueqiu-token.sh
+
+#########################################
+# 生产环境记得修改.env配置文件的真实路径，修改的脚本是xqtoken/update-xueqiu-token.sh
+CONFIG_FILE="${SCRIPT_DIR}/.env"
+
+# 安装依赖
+1. 检查 Node.js 和 npm
+node -v
+npm -v
+如果没有安装，可以先尝试：
+sudo yum install -y nodejs npm
+安装后再次检查版本。
+2. 全局安装 agent-browser
+sudo npm install -g agent-browser
+确认安装位置：
+command -v agent-browser
+agent-browser --version
+你的脚本要求命令必须位于：
+/usr/local/bin/agent-browser
+如果 command -v 返回的是其他路径，例如 /usr/bin/agent-browser，可以建立软链接：
+sudo ln -s "$(command -v agent-browser)" /usr/local/bin/agent-browser
+也可以把脚本里的 /usr/local/bin/agent-browser 改成实际路径。
+
+3. 下载浏览器并安装 Linux 系统依赖
+在 Linux 上执行：
+sudo agent-browser install --with-deps
+这一步会：
+下载 Chrome for Testing
+安装 Chrome 运行所需的系统库
+系统库安装过程中可能调用 yum、dnf 等系统包管理器
+建议让定时任务的执行用户也能访问下载的浏览器。 如果 cron 是 root 的，直接以 root 安装最省事；如果是普通用户的 cron，应避免浏览器被安装到该用户无权访问的 /root 目录下。
+4. 验证是否能正常启动
+/usr/local/bin/agent-browser open https://example.com
+/usr/local/bin/agent-browser eval "document.title"
+/usr/local/bin/agent-browser close
+如果能输出类似 Example Domain 的标题，说明浏览器部分基本可用。
+最简命令汇总
+如果服务器已经有 Node.js 和 npm，主要就是这三条：
+sudo npm install -g agent-browser
+sudo agent-browser install --with-deps
+/usr/local/bin/agent-browser --version
+所以答案是：主体用 npm 安装；yum 只负责 Node.js/npm 和底层依赖；不要用 pip。

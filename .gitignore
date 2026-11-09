@@ -24,6 +24,11 @@ env/
 *.pem
 *.key
 !.env.example
+# 雪球 Token 自动更新的浏览器登录态与解析结果包含真实 Cookie，不得入库
+xqtoken/.env
+xqtoken/xueqiu-state.json
+xqtoken/.token-parse.json
+xqtoken/logs/
 
 # --- 运行产物 ---
 logs/
