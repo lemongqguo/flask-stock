@@ -1,0 +1,223 @@
+{
+  "cookies": [
+    {
+      "name": "cookiesu",
+      "value": "291791530894898",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": 1823153294.933102,
+      "size": 23,
+      "httpOnly": false,
+      "secure": false,
+      "session": false
+    },
+    {
+      "name": "u",
+      "value": "291791530894898",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": -1.0,
+      "size": 16,
+      "httpOnly": false,
+      "secure": false,
+      "session": true
+    },
+    {
+      "name": "HMACCOUNT",
+      "value": "07E70DB0E961EB93",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": -1.0,
+      "size": 25,
+      "httpOnly": false,
+      "secure": false,
+      "session": true
+    },
+    {
+      "name": "device_id",
+      "value": "ab70f3cee6cbdd458a4d2eaa15c9158f",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": 1823153301.0,
+      "size": 41,
+      "httpOnly": false,
+      "secure": false,
+      "session": false
+    },
+    {
+      "name": "smidV2",
+      "value": "202610091528219fae062b1b588cb1541384eb833cc237009b65e5ae1564a30",
+      "domain": "www.xueqiu.com",
+      "path": "/",
+      "expires": 1826090901.079959,
+      "size": 69,
+      "httpOnly": false,
+      "secure": false,
+      "session": false
+    },
+    {
+      "name": "HMACCOUNT_BFESS",
+      "value": "07E70DB0E961EB93",
+      "domain": ".hm.baidu.com",
+      "path": "/",
+      "expires": 1826090897.136587,
+      "size": 31,
+      "httpOnly": false,
+      "secure": true,
+      "session": false,
+      "sameSite": "None"
+    },
+    {
+      "name": "xq_a_token",
+      "value": "ace9f2c37eb4a98f5e2a337b73b930792600f546",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": -1.0,
+      "size": 50,
+      "httpOnly": true,
+      "secure": false,
+      "session": true
+    },
+    {
+      "name": "xqat",
+      "value": "ace9f2c37eb4a98f5e2a337b73b930792600f546",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": -1.0,
+      "size": 44,
+      "httpOnly": true,
+      "secure": false,
+      "session": true
+    },
+    {
+      "name": "xq_r_token",
+      "value": "8dcefd8d5afe069783276579a9beb951e6641ad9",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": -1.0,
+      "size": 50,
+      "httpOnly": true,
+      "secure": false,
+      "session": true
+    },
+    {
+      "name": "xq_id_token",
+      "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJ1aWQiOi0xLCJpc3MiOiJ1YyIsImV4cCI6MTc5NjYwNjgwMywiY3RtIjoxNzk0MTg5ODMyNzI0LCJjaWQiOiJkOWQwbjRBWnVwIn0.dc68-a1iapzDBgqhqhinWI6bH0zoXQ425yF_PHQYV7YKMy8tfCcSSXMzqmPHbZMmCD_tevzsQD_7HImj11hYrS-6eDsF3h_B4Lf29_uzjFQuzu00CiuC79XUYPa-AFAUNMCBxSPsI-W_4tCdxri-GJ7e1YnhUxOmXRfPEpDpu2zV6z5pxF_3_lFn2y6wyKXZ9hwveNC8bJ0k3yv81UjXWEthWKg8b-NQu01PsAPd85C-JrrExttM0UxQmDB8noAuHAVeGXE1WPm9hSyHVGfgB6pvDryn5LtKyqg9PEJnC0tlaUK27GZwBtAa7wZ-hTL6NYbzFS9R2gl38Aww1jx3kQ",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": -1.0,
+      "size": 494,
+      "httpOnly": true,
+      "secure": false,
+      "session": true
+    },
+    {
+      "name": "acw_tc",
+      "value": "2760776b17941898587957137ef788e943a6fd6c9122cad890f516fd24ad66",
+      "domain": "xueqiu.com",
+      "path": "/",
+      "expires": 1794191658.818278,
+      "size": 68,
+      "httpOnly": true,
+      "secure": false,
+      "session": false
+    },
+    {
+      "name": "Hm_lvt_1db88642e346389874251b5a1eded6e3",
+      "value": "",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": 1825725859.0,
+      "size": 39,
+      "httpOnly": false,
+      "secure": false,
+      "session": false
+    },
+    {
+      "name": "Hm_lpvt_1db88642e346389874251b5a1eded6e3",
+      "value": "1794189860",
+      "domain": ".xueqiu.com",
+      "path": "/",
+      "expires": -1.0,
+      "size": 50,
+      "httpOnly": false,
+      "secure": false,
+      "session": true
+    },
+    {
+      "name": "acw_tc",
+      "value": "276077ee17941898609552399efeec6fff3d8f0276ff14672deeb0c5e135da",
+      "domain": "open.xueqiu.com",
+      "path": "/",
+      "expires": 1794191660.983889,
+      "size": 68,
+      "httpOnly": true,
+      "secure": false,
+      "session": false
+    },
+    {
+      "name": ".thumbcache_f24b8bbe5a5934237bbc0eda20c1b6e7",
+      "value": "BXVOFksxW85Wq3N+NMPqzqz428Fi4bAZQr7JtUM1xmjSYioj0jQVouh2chutw9dQJq7eqSh6q9bFJOw6QZSqkA%3D%3D",
+      "domain": "www.xueqiu.com",
+      "path": "/",
+      "expires": 1828749863.246843,
+      "size": 136,
+      "httpOnly": false,
+      "secure": false,
+      "session": false
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://www.xueqiu.com",
+      "localStorage": [
+        {
+          "name": ".thumbcache_f24b8bbe5a5934237bbc0eda20c1b6e7",
+          "value": "BXVOFksxW85Wq3N+NMPqzqz428Fi4bAZQr7JtUM1xmjSYioj0jQVouh2chutw9dQJq7eqSh6q9bFJOw6QZSqkA=="
+        },
+        {
+          "name": "mpaas-footer",
+          "value": "{\"content\":{\"socialLinks\":[{\"type\":\"wechat\",\"href\":\"javascript:;\",\"target\":\"_self\",\"img\":\"https://xqimg.imedao.com/18bb2bcea2e5c3d3fd792a63.png\",\"alt\":\"微信\",\"hoverColor\":\"#009933\",\"qrcode\":{\"text\":\"扫一扫，关注雪球微信公众号\",\"img\":\"https://xqimg.imedao.com/18c8103820e434413fd36c92.png\"}},{\"type\":\"weibo\",\"href\":\"https://weibo.com/xueqiucom\",\"target\":\"_blank\",\"img\":\"https://xqimg.imedao.com/18bb2bcea3c671b3fed29f8b.png\",\"alt\":\"微博\",\"hoverColor\":\"#EE2500\"},{\"type\":\"mail\",\"href\":\"mailto:snowball@xueqiu.com\",\"target\":\"_blank\",\"img\":\"https://xqimg.imedao.com/18bb312a4c99b873fb8d004e.png\",\"alt\":\"邮箱\",\"hoverColor\":\"#287DFF\"}],\"topLinks\":[{\"text\":\"A股开户\",\"href\":\"https://broker.xueqiu.com/open/pingan\",\"target\":\"_blank\"},{\"text\":\"雪球基金\",\"href\":\"https://danjuanfunds.com/\",\"target\":\"_blank\"},{\"text\":\"投资者教育\",\"href\":\"https://xueqiu.com/edu/invest-edu\",\"target\":\"_blank\"},{\"text\":\"风险提示\",\"href\":\"https://xueqiu.com/about/faq#6_0\",\"target\":\"_blank\"}],\"riskNotice\":\"风险提示：雪球里任何用户或者嘉宾的发言，都有其特定立场，投资决策需要建立在独立思考之上\",\"feedback\":{\"parts\":[{\"type\":\"text\",\"value\":\"其他建议反馈欢迎点击\"},{\"type\":\"link\",\"text\":\"#我给雪球提建议#\",\"href\":\"https://xueqiu.com/hashtag/I-aIkee7membqueQg-aPkOW7uuiuriM=\"},{\"type\":\"text\",\"value\":\" 如受到欺诈信息骚扰请至 \"},{\"type\":\"link\",\"text\":\"#防诈骗举报专区#\",\"href\":\"https://xueqiu.com/hashtag/I-mYsuiviOmql-S4vuaKpeS4k-WMuiM=\"}]},\"complaints\":{\"contact\":\"互联网违法和不良信息投诉：01061840634 / tousu@xueqiu.com\",\"center\":{\"title\":\"举报中心\",\"reportLeftList\":[{\"name\":\"清朗.财经类违规信息举报专区\",\"link\":\"https://xueqiu.com/cms/help/tousu/qinglang\"},{\"name\":\"侵害未成年人权益举报专区\",\"link\":\"https://xueqiu.com/law/report\"},{\"name\":\"违法（含侵权）及不良信息投诉指引\",\"link\":\"https://xueqiu.com/law/tortreport\"},{\"name\":\"互联网算法推荐违规举报专区\",\"link\":\"https://xueqiu.com/law/algorithm-report\"},{\"name\":\"谣言虚假举报专区\",\"link\":\"https://xueqiu.com/cms/help/tousu/yaoyan\"},{\"name\":\"世运会举报专区\",\"link\":\"https://xueqiu.com/cms/help/tousu/dayunhui\"}],\"reportRightList\":[{\"name\":\"网上有害信息举报专区\",\"link\":\"https://www.12377.cn/\"},{\"name\":\"非法证券投资咨询活动举报专区\",\"link\":\"https://xueqiu.com/snowman/terms/investment-report\"},{\"name\":\"历史虚无主义举报专区\",\"link\":\"https://xueqiu.com/law/history-report\"},{\"name\":\"网络暴力有害信息举报专区\",\"link\":\"https://xueqiu.com/law/cyberbullying-report\"},{\"name\":\"涉企业侵权/虚假信息举报专区\",\"link\":\"https://xueqiu.com/cms/help/tousu/qiye\"},{\"name\":\"风险提示\",\"link\":\"https://xueqiu.com/about/faq#6_0\"}]}},\"legalLinks\":[{\"text\":\"侵权投诉指引\",\"href\":\"https://xueqiu.com/law/tortreport\",\"target\":\"_blank\"},{\"text\":\"雪球服务协议\",\"href\":\"https://xueqiu.com/about/terms\",\"target\":\"_blank\"},{\"text\":\"雪球隐私政策\",\"href\":\"https://xueqiu.com/law/privacy\",\"target\":\"_blank\"}],\"companyInfo\":{\"name\":\"北京雪球信息科技有限公司\",\"records\":[[{\"text\":\"京公网安备 11010502040379号\",\"href\":\"https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=11010502040379\",\"target\":\"_blank\"},{\"text\":\"京ICP证100666号\",\"href\":\"https://xqdoc.imedao.com/198bc1b4fb41d6523feaace4.jpg\",\"target\":\"_blank\"},{\"text\":\"京ICP备10040543\",\"href\":\"https://beian.miit.gov.cn/\",\"target\":\"_blank\"},{\"text\":\"京金信备〔2022〕3号\",\"href\":\"https://fisbaobei.ifcert.cn/Home/homeIindex\",\"target\":\"_blank\"},{\"text\":\"营业执照\",\"href\":\"https://xqimg.imedao.com/1798dc30dead0453fd6075d8.png\",\"target\":\"_blank\"}],[{\"text\":\"证券业协会会员单位（代码817027）\",\"href\":\"https://xqimg.imedao.com/14d52aefd15e8f3fc0ce1fbd.png\",\"target\":\"_blank\"},{\"text\":\"广播电视节目制作经营许可证: (京)字第08638号\",\"href\":\"https://xqdoc.imedao.com/198c1a776442061d3fe4efd5.pdf\",\"target\":\"_blank\"},{\"text\":\"出版物经营许可证\",\"href\":\"https://xqimg.imedao.com/181b337b7742caf83fee6640.png\",\"target\":\"_blank\"}],[{\"text\":\"人工智能服务登记编号：Beijing-XueQiuHuiJian-2S0033\",\"href\":\"javascript:;\",\"target\":\"_self\"}]]},\"bottomLinks\":[{\"text\":\"常见问题\",\"href\":\"https://xueqiu.com/about/faq\",\"target\":\"_blank\"},{\"text\":\"加入我们\",\"href\":\"https://xueqiu.com/about/jobs\",\"target\":\"_blank\"},{\"text\":\"关于雪球\",\"href\":\"https://xueqiu.com/about/what-is-xueqiu\",\"target\":\"_blank\"}]},\"timestamp\":\"1755681684000\",\"update_type\":1,\"cid\":13755,\"stale\":true}"
+        },
+        {
+          "name": "Hm_lvt_1db88642e346389874251b5a1eded6e3",
+          "value": "1825725859674|"
+        },
+        {
+          "name": "smidV2",
+          "value": "202610091528219fae062b1b588cb1541384eb833cc237009b65e5ae1564a30"
+        },
+        {
+          "name": "taichi_rules",
+          "value": "{\"data\":\"45-44,8115-0,1550-0,47-1,110-0,7055-349,500-0,1000-1058,500-101,47-30\",\"expirationTime\":1794193461744}"
+        },
+        {
+          "name": "expires_time",
+          "value": "ed1eaeee5e9253821274e2c023ee6b8c"
+        },
+        {
+          "name": "newLoginDidMount",
+          "value": "1"
+        },
+        {
+          "name": "DEVICE_INFO",
+          "value": "08bd33114611d5c44f408f77f277d57f55fe99e6bf93fd668c986e91307f83da2e0ee62d42d22f9af53659e961f1512c3246e60b6b4eb103fe8fb751cf17dac6176ed316adcdad471139ae032e3cd6f6628a4ed656c58ede0f4addcd88f7c710"
+        },
+        {
+          "name": "mpaas-web_unsign_download",
+          "value": "{\"content\":{\"home_banner\":true,\"login_dot\":true,\"download_bottom\":false,\"download_right\":true,\"always_close_download\":false,\"new_download_right_image\":\"https://xqimg.imedao.com/19518c8a3fa323bb3fcabb09.png\",\"default_download_right_image\":\"https://xqimg.imedao.com/19372046fef9aede3fecf872.png\"},\"timestamp\":\"1744791262000\",\"update_type\":1,\"cid\":12917,\"stale\":true}"
+        }
+      ],
+      "sessionStorage": [
+        {
+          "name": "HMACCOUNT",
+          "value": "07E70DB0E961EB93"
+        },
+        {
+          "name": "Hm_lpvt_1db88642e346389874251b5a1eded6e3",
+          "value": "1794189860"
+        }
+      ]
+    }
+  ]
+}
