@@ -333,6 +333,13 @@ class Config:
     AI_MONTHLY_LIMIT = _get_int('AI_MONTHLY_LIMIT', 200)   # 月度调用上限，达限拒绝而不是静默失败
     AI_TIMEOUT = _get_int('AI_TIMEOUT', 60)                # 外部调用超时（秒），必传
 
+    # --- 市场成交额（009）---
+    # 页面「同步数据」按钮的冷却秒数（进程内存判定，单进程部署有效，见 ADR-006）
+    TURNOVER_SYNC_COOLDOWN = _get_int('TURNOVER_SYNC_COOLDOWN', 60)
+    # 监控线程自动同步（增量）：开关与间隔秒数（默认 3 小时；空库跳过、失败也计间隔，见 ADR-008）
+    TURNOVER_AUTO_SYNC_ENABLED = _get_bool('TURNOVER_AUTO_SYNC_ENABLED', True)
+    TURNOVER_AUTO_SYNC_INTERVAL = _get_int('TURNOVER_AUTO_SYNC_INTERVAL', 10800)
+
 
 class XueqiuToken:
     """雪球行情 Token（从环境变量读取，禁止硬编码）。"""

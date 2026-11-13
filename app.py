@@ -21,6 +21,7 @@ from models.stock_monitor import monitor
 from utils.logging_config import setup_logging
 from views.ai_analysis import ai_bp
 from views.auth import auth_bp
+from views.market import market_bp
 from views.stock_orders import stock_bp
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +39,8 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(stock_bp, url_prefix='/stock')
 # AI 分析（007）：/stock/ai/...，与订单页同域便于共用侧栏与静态资源
 app.register_blueprint(ai_bp, url_prefix='/stock/ai')
+# 市场成交额（009）：/stock/market/...，侧栏「行情」大项
+app.register_blueprint(market_bp, url_prefix='/stock/market')
 
 
 @app.template_global('static_url')
@@ -216,6 +219,43 @@ def set_admin_command(username):
     else:
         print('设置失败，请查看日志')
         raise SystemExit(1)
+
+
+@app.cli.command('import-turnover')
+@click.argument('path', required=False)
+def import_turnover_command(path):
+    """
+    flask import-turnover [csv路径]：导入历年每日成交额 CSV（009 市场成交额）。
+
+    默认导入 example/A股每日成交额_1990至今.csv；整体校验通过才写入，幂等可重复执行。
+    """
+    from models.market_turnover import MarketDailyTurnover
+
+    try:
+        summary = MarketDailyTurnover.import_csv(path)
+    except ValueError as exc:
+        print('导入失败：%s' % exc)
+        raise SystemExit(1)
+    print('导入完成：%(days)s 个交易日（%(start_date)s ~ %(end_date)s），来源 %(source)s' % summary)
+
+
+@app.cli.command('sync-turnover')
+@click.option('--source', type=click.Choice(['auto', 'eastmoney', 'tencent']), default='auto',
+              help='数据源：auto 东财优先失败切腾讯')
+@click.option('--full', is_flag=True, default=False,
+              help='强制全量同步（默认库非空走增量；建议每月全量校准一次）')
+def sync_turnover_command(source, full):
+    """flask sync-turnover：同步每日成交额（默认增量，--full 全量；全量腾讯备源带 60 日写入保护）。"""
+    from models.market_turnover import MarketDailyTurnover
+
+    try:
+        summary = MarketDailyTurnover.sync_from_source(source, full=full)
+    except Exception as exc:
+        print('同步失败：%s' % exc)
+        raise SystemExit(1)
+    print('同步完成：数据源 %(source)s，模式 %(mode)s，覆盖 %(days)s 个交易日（%(start_date)s ~ %(end_date)s）' % summary)
+    if summary.get('protected_before'):
+        print('备源保护：仅更新 %s 及之后的交易日，更早历史未动' % summary['protected_before'])
 
 
 def prepare_runtime(strict=False, install_signals=True):

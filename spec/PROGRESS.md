@@ -4,7 +4,7 @@
 > 每一份 `current/` 规格被修改，必须回到本文件更新对应条目的状态。两者不一致视为维护事故。
 > 更新时机与格式要求见 [rules/spec-maintenance.md](./rules/spec-maintenance.md)。
 
-**最后更新**：2026-10-26　|　**当前基线**：`v1.5.0`
+**最后更新**：2026-11-13　|　**当前基线**：`v1.5.0`
 
 ---
 
@@ -12,20 +12,36 @@
 
 | 指标 | 数值 |
 | --- | --- |
-| 功能规格总数 | 8（**8 已实现**） |
-| 待归档变更 | 9（006 指标监控：待人工确认 UI 与真实雪球采集周期；**007 AI 页改版一**；**订单列表 AI 快捷入口**；**007 AI 页改版二（搜索式工作台）**：均待人工确认观感；**AI_MODEL 支持清单**：待人工确认下拉；**006 指标告警改四项 AND 组合触发**：待真实环境验证；**006 指标页 AI 快捷入口**、**006 指标页分页 + AI 入口换配色**：待人工确认观感；**004 收盘后照常采集**：待观察真实收盘后日志） |
-| 已闭环缺陷 | 15（D-01 ~ D-15） |
+| 功能规格总数 | 9（**9 已实现**） |
+| 待归档变更 | 13（006 指标监控：待人工确认 UI 与真实雪球采集周期；**007 AI 页改版一**；**订单列表 AI 快捷入口**；**007 AI 页改版二（搜索式工作台）**：均待人工确认观感；**AI_MODEL 支持清单**：待人工确认下拉；**006 指标告警改四项 AND 组合触发**：待真实环境验证；**006 指标页 AI 快捷入口**、**006 指标页分页 + AI 入口换配色**：待人工确认观感；**004 收盘后照常采集**：待观察真实收盘后日志；**009 市场成交额**：待 CSV 导入执行 + 页面观感人工确认；**009 市场成交额看板改版**：待人工确认观感；**008/009 壳层布局反馈（四组折叠 + 平铺自适应）**：待人工确认观感；**009 成交额增量同步 + 监控自动同步**：待真实环境观察 3h 周期） |
+| 已闭环缺陷 | 16（D-01 ~ D-16） |
 | 未闭环待办 | 9（T-01 ~ T-09，P1: 3 / P2: 6）；T-12 已于 2026-10-22 验证闭环 |
-| 自动化测试 | 634 个用例（标准库 `unittest`）。运行方式：`./stockvenv/bin/python tests/run_all.py`（Windows：`stockvenv\Scripts\python.exe`）；**必须用项目自带的虚拟环境**（Python 3.12 + numpy 2.5.4 + pandas 3.1.0，已与 `requirements.txt` 对齐）。本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
+| 自动化测试 | 695 个用例（667 + 009 增量同步新增 18 + 监控自动同步新增 10，标准库 `unittest`）。运行方式：`./stockvenv/bin/python tests/run_all.py`（Windows：`stockvenv\Scripts\python.exe`）；**必须用项目自带的虚拟环境**（Python 3.12 + numpy 2.5.4 + pandas 3.1.0，已与 `requirements.txt` 对齐）。本机 `.env` 的 `FLASK_DEBUG=1` 会让 `test_no_debug_by_default` 失败（`FLASK_DEBUG=0` 时全通过），非代码缺陷 |
 
 > **归档规则**：变更记录置为「已合入」后移入 `archive/changes/`。007 首次交付已于 2026-10-22 完成真实模型调用验证并归档；
 > 006（待真实雪球周期）与 007 改版（待人工确认三栏观感）暂留 `changes/`。
 
 **整体阶段**：M1~M4 的主要缺陷已闭环，进入"补长尾 + 建 CI"阶段。
-**本轮进度（2026-10-26）**：完成**多用户数据隔离**——订单归属（`stock_master.user_id`）、
-角色（`users.role`）、全站可见性作用域、**越权写操作拦截**、按人唯一（[ADR-005](./decisions/005-per-user-stock-code-uniqueness.md)）、
-监控本轮结果共享、告警邮件按归属人发送。真实库迁移已落地（92 条订单回填、唯一键与外键就位），
-新增 48 个用例（累计 626 全通过）。**待人工确认**：两种角色视角的页面观感、真实邮件送达、真实雪球去重。
+**本轮进度（2026-11-13）**：完成**009 成交额增量同步 + 监控线程自动同步**（[ADR-008](./decisions/008-turnover-incremental-and-auto-sync.md)）——
+同步由「每次全量」改为「库非空走增量」（东财动态 beg / 北证 lmt / 腾讯 count 单页，通常只取最近约 60 个交易日；
+库空 / 超 100 自然日 / CLI `--full` 才全量，全量备源 60 日保护不变）；新增 `validate_recent` 增量校验分流；
+监控线程 `_maybe_sync_turnover()` 默认每 3h 自动增量同步（失败也计间隔、空库跳过、调用点在雪球退避前），
+新增 `TURNOVER_AUTO_SYNC_ENABLED` / `TURNOVER_AUTO_SYNC_INTERVAL` 两配置；CLI 加 `--full` 月度校准兜底；
+代码审查后加固：自动同步间隔解析容错（非法配置回落默认 10800s，先置位再执行）。
+新增 28 个用例（本快照 3 个测试模块 61/61 通过：成交额 47 + 自动同步 10 + 壳层 4；全仓库累计 695）。
+**上一轮进度（2026-11-12）**：完成**009 市场成交额**——新表 `market_daily_turnover`（沪深北三市每日成交额，单位亿元），
+数据源复用用户实测的 example 逻辑（东财主源 + 腾讯备源，[ADR-006](./decisions/006-turnover-source-and-caliber.md)），
+备源 60 日写入保护；`/stock/market/` 页面（4 KPI + 走势图 + 最近 20 日明细）+ 侧栏新增「行情」大项；
+`flask import-turnover` / `flask sync-turnover` 两个 CLI。真实库 + 真实腾讯接口验证 25/25 通过（验证后表已还原为空），
+新增 25 个用例。用户随后自行执行 `sync-turnover` 入库全量（腾讯口径 8807 行）；同日修复 **D-16**
+（切主题后走势图残留浅色表格框）：去除网格/轴边框 + `MutationObserver` 主题重绘，真实浏览器 7 状态验证通过，
+新增 2 个契约用例（累计 661）。同日按用户指定模板 `logs/index.html` 完成**看板改版**
+（万亿大数字 hero + 6 指标卡 + 自绘 canvas：六档区间 / 滚轮缩放 / 拖拽平移 / 悬停明细 / 60s 自动刷新，
+[ADR-007](./decisions/007-turnover-dashboard-self-drawn-canvas.md)），Chart.js 收窄为仅 K 线页；
+真实浏览器 9 项验证通过，契约用例 27→29（累计 663）。同日再按用户反馈完成**壳层布局反馈**：
+侧栏四组标题行各一个折叠控件（状态同步 + 跨刷新记忆），看板去 1400px 上限改全宽平铺 +
+图表撑满剩余高度（宽屏 6 指标单行）；1920/1000/620 三宽度实测全过，新增 4 个壳层契约用例（累计 667）。
+**CSV 历史导入仍等用户指令**（example 已被用户临时移走）。
 
 ---
 
@@ -56,8 +72,9 @@
 | 告警类型字段（类型/子类型/档位/通知状态） | 已实现 | [003](./current/003-alarm-thresholds.md) | `database.py`、`models/stock_alarm.py`、`models/base.py`、`utils/alarm_rules.py` | 存量回填 1590 条，零 unknown；[变更](./changes/2026-10-21-alarm-type-fields.md) |
 | 指标监控（52 周 / 相对强弱） | 已实现（批次一 + 二 + **组合触发**） | [006](./current/006-stock-indicator.md) | `models/stock_indicator.py`、`utils/indicator_rules.py`（`is_combo_hit`）、`models/stock_monitor.py`、`templates/indicator_list.html`、`templates/recent_alarms.html` | 三表 + 判定 + 采集 + 24h 冷却告警 + `/indicator` 页面 + 告警设置「指标告警」页签；**2026-10-23 起四条 AND 才有告警**（单条 `combo`，一条邮件列四项），页面只显示组合结论；[批次一 / 二变更](./changes/2026-10-21-stock-indicator.md)、[组合触发变更](./changes/2026-10-23-indicator-combo.md)、[ADR-004](./decisions/004-indicator-combo-semantics.md) |
 | AI 个股分析 | 已实现（含 10-22 两轮页面改版） | [007](./current/007-ai-analysis.md) | `views/ai_analysis.py`、`utils/ai_client.py`、`utils/ai_prompt.py`、`models/stock_ai.py`、`templates/ai_analysis.html`、`static/js/theme.js` | **搜索式工作台**（hero 搜索框 + 标的条 / 报告 / 参数 + 快照 + 历史）+ 服务端标的搜索 `/stock/ai/api/search` + 分析 / 追问 / 连通测试；**不再铺全量标的列表**；模型选择与 5 个分析维度可配可落库；密钥仅走环境变量；[首次变更](./archive/changes/2026-10-21-ai-analysis.md) / [改版一](./changes/2026-10-22-ai-analysis-ui.md) / [改版二](./changes/2026-10-22-ai-analysis-workspace.md) |
-| 前端 UI（双主题 / 去 Bootstrap） | 已实现 | [008](./current/008-frontend-ui.md) | `templates/`、`static/` | 指标监控 / AI 分析页随 006/007；侧栏已按设计稿分「交易 / 监控 / 系统」三组，指标监控带近 24h 指标告警徽标；[底座变更](./changes/2026-10-21-frontend-redesign.md)、[侧栏分组](./archive/changes/2026-10-23-sidebar-groups.md) |
+| 前端 UI（双主题 / 去 Bootstrap） | 已实现 | [008](./current/008-frontend-ui.md) | `templates/`、`static/` | 指标监控 / AI 分析 / 市场成交额页随 006/007/009；侧栏分「交易 / 行情 / 监控 / 系统」四组（2026-11-12 起），四组标题行各一个折叠控件（同日反馈），指标监控带近 24h 指标告警徽标；[底座变更](./changes/2026-10-21-frontend-redesign.md)、[侧栏分组](./archive/changes/2026-10-23-sidebar-groups.md) |
 | K 线数据 API + 前端图表 | 已实现 | [005](./current/005-kline-signal.md) | `views/stock_orders.py`、`templates/stock_order_form.html` | Chart.js 已锁定 4.4.1 |
+| **市场成交额（沪深北每日成交额入库 + 行情页）** | 已实现（2026-11-12 新增） | [009](./current/009-market-turnover.md) | `utils/turnover_source.py`、`models/market_turnover.py`、`views/market.py`、`templates/market_turnover.html`、`database.py`、`models/stock_monitor.py`（自动同步挂钩） | 东财主源 + 腾讯备源（auto 降级），备源 60 日保护；`flask import-turnover` / `sync-turnover`；页面只读库 + 同步冷却 60s；用户已自行同步腾讯全量（8807 行），CSV 导入等指令；同日按用户模板看板改版（hero + 自绘 canvas + 六档区间 + 缩放/平移/悬停 + 60s 自动刷新 + 平铺自适应），D-16 主题重绘延续；[ADR-006](./decisions/006-turnover-source-and-caliber.md)、[ADR-007](./decisions/007-turnover-dashboard-self-drawn-canvas.md)；**2026-11-13 增量同步 + 监控自动同步（默认 3h）**：库非空增量 / 库空全量 / `--full` 校准，[ADR-008](./decisions/008-turnover-incremental-and-auto-sync.md) |
 
 ---
 
@@ -160,6 +177,11 @@
 | 2026-10-23 | **指标监控页分页 + AI 入口换配色**：`?page=` / `?per_page=` 默认每页 10 条（可选 5/10/20/50，与订单列表同款 select 与 `.pager`），KPI「监控标的」改为全量口径、命中/未采集为本页口径；行内 AI 入口改为**可切换变体**（`.row-ai.blue` 蓝色 / 订单页保持紫色默认）；表格七列全定宽 1160（窄屏横向滚动）；新增 10 个用例（累计 573） | [006](./current/006-stock-indicator.md)、[008](./current/008-frontend-ui.md) | [2026-10-23 指标页分页](./changes/2026-10-23-indicator-pagination.md) |
 | 2026-10-23 | **收盘后照常采集**（原 D-04 是"非交易时段跳过整轮"，导致收盘价 / 当日 K 线不落库）：删掉跳过分支，非交易时段跑同一条 `check_and_alert` 链路，靠 `MONITOR_OFF_HOURS_ROUND_INTERVAL`(1800s) 与 `MONITOR_OFF_HOURS_FETCH_MIN/MAX_DELAY`(60~300s) 放慢；新增 `MONITOR_ROUND_INTERVAL`(0) 保留交易时段现状；删除死配置 `MONITOR_STRICT_TRADING_HOURS`；新增 5 个用例（累计 578） | [004](./current/004-monitor-service.md)、[006](./current/006-stock-indicator.md)、[003](./current/003-alarm-thresholds.md) | [2026-10-23 收盘后照常采集](./changes/2026-10-23-offhours-collection.md) |
 | 2026-10-26 | **多用户数据隔离**：订单归属 `stock_master.user_id` + 角色 `users.role`（admin 见全量 / user 见自己）+ 判定入口唯一化 `utils/access.py`；全站可见性作用域（列表 / 指标页 / 告警设置 / 告警历史 / K 线 API / 刷新行情 / AI 页与搜索 / 侧栏徽标）+ 写操作越权拦截；唯一键由 `UNIQUE(stock_code)` 改 `UNIQUE(user_id, stock_code)`（[ADR-005](./decisions/005-per-user-stock-code-uniqueness.md)）+ 监控本轮结果按代码共享（同代码只请求一次雪球）+ 告警邮件按归属人邮箱与其通知开关；真实库迁移落地（92 条订单回填，`uk_user_code` 已验证拦重复）；新增 48 个用例（累计 626 全通过） | [001](./current/001-user-auth.md)、[002](./current/002-stock-order.md)、[003](./current/003-alarm-thresholds.md)、[004](./current/004-monitor-service.md)、[007](./current/007-ai-analysis.md) | [2026-10-26 多用户数据隔离](./archive/changes/2026-10-26-multi-user-ownership.md) |
+| 2026-11-12 | **壳层布局反馈**：侧栏交易 / 行情 / 监控 / 系统四组标题行各一个 « 折叠控件（theme.js 全绑定状态同步，共享记忆）；成交额看板去 1400px 上限改全宽平铺、图表 flex 撑满剩余高度、≥1500px 6 指标单行；1920/1000/620 三宽度 + 双主题实测全过（截图因 Browser 视图隐藏未产出，JS 实测为准）；新增 4 个壳层契约用例（累计 667） | [008](./current/008-frontend-ui.md)、[009](./current/009-market-turnover.md) | [2026-11-12 壳层布局反馈](./changes/2026-11-12-shell-toggles-fullbleed-market.md) |
+| 2026-11-12 | **市场成交额看板改版**（按用户模板 `logs/index.html` 移植）：万亿大数字 hero + 6 指标卡 + 自绘 canvas 走势图（六档交易日区间 / 滚轮缩放 / 拖拽平移 / 悬停明细 / 60s 自动刷新），零外部图表依赖（Chart.js 收窄为仅 K 线页）；明细表移除进悬停 tooltip；`--mk-*` 双主题变量 + MutationObserver 重绘延续 D-16；真实浏览器 9 项验证通过（用户数据零写入零删除）；契约用例 27→29（累计 663） | [009](./current/009-market-turnover.md)、[008](./current/008-frontend-ui.md) | [2026-11-12 看板改版](./changes/2026-11-12-market-turnover-dashboard.md) / [ADR-007](./decisions/007-turnover-dashboard-self-drawn-canvas.md) |
+| 2026-11-12 | **修复 D-16（切主题后图表残留表格框）**：成交额走势图关闭网格/轴边框 + `MutationObserver` 监听 `data-theme` 重绘（刻度/tooltip/线色随主题，不同于 008 K 线「需刷新」约定）；真实浏览器 7 状态验证通过；新增 2 个契约用例（累计 661） | [009](./current/009-market-turnover.md) | [2026-11-12 市场成交额](./changes/2026-11-12-market-turnover.md) §8 |
+| 2026-11-12 | **市场成交额**：新表 `market_daily_turnover`（沪深北三市 + 合计，亿元 DECIMAL(18,4)，`trade_date` 唯一键幂等 upsert）；数据源复用 example 逻辑（东财 push2his 主源 + 腾讯 newfqkline 备源，auto 降级，urllib 无新依赖）；备源 60 日写入保护；`/stock/market/` 页面（4 KPI + Chart.js 走势图区间×视图 + 最近 20 日明细 + 同步按钮冷却 60s）+ 侧栏「行情」大项；`flask import-turnover` / `sync-turnover` CLI；真实库 + 真实腾讯接口验证 25/25 通过（东财本机不可达走降级；CSV 与腾讯全量比对：近 60 交易日除当日盘中快照外零差异），验证后表还原为空；新增 25 个用例（累计 659）；**CSV 未导入，等用户指令** | [009](./current/009-market-turnover.md)、[008](./current/008-frontend-ui.md) | [2026-11-12 市场成交额](./changes/2026-11-12-market-turnover.md) / [ADR-006](./decisions/006-turnover-source-and-caliber.md) |
+| 2026-11-13 | **成交额增量同步 + 监控线程自动同步**：同步改智能模式（库非空增量：东财动态 beg / 北证 lmt / 腾讯 count 单页约 60 交易日；库空 / 超 100 自然日 / `--full` 全量，备源 60 日保护仅全量路径）；`validate_recent` 增量校验分流；监控 `_maybe_sync_turnover()` 默认 3h（失败也计间隔 / 空库跳过 / 退避前调用），新增 `TURNOVER_AUTO_SYNC_ENABLED` / `TURNOVER_AUTO_SYNC_INTERVAL`；CLI `--full` 月度校准；新增 28 个用例（本快照 61/61 通过，累计 695） | [009](./current/009-market-turnover.md)、[004](./current/004-monitor-service.md) | [2026-11-13 增量同步 + 自动同步](./changes/2026-11-13-turnover-incremental-auto-sync.md) / [ADR-008](./decisions/008-turnover-incremental-and-auto-sync.md) |
 
 ---
 

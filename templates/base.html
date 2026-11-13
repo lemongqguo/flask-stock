@@ -27,10 +27,16 @@
         </a>
 
         {% if session.user_id %}
-        {# 侧栏分三组（交易 / 监控 / 系统），与 design-preview 设计稿一致：
+        {# 侧栏分四组（交易 / 行情 / 监控 / 系统），与 design-preview 设计稿一致：
            每组「组标题 + nav」外包一层 div，`.sidebar` 的 gap 就只落在组与组之间 #}
         <div>
-            <div class="nav-group-label"><span>交易</span></div>
+            <div class="nav-group-label">
+                <span>交易</span>
+                <button type="button" class="side-toggle" data-side-toggle
+                        aria-expanded="true" aria-label="折叠侧栏" title="折叠侧栏">
+                    <svg width="14" height="14"><use href="#i-chevron-left"/></svg>
+                </button>
+            </div>
             <nav class="nav">
                 <a class="nav-item {{ 'active' if request.endpoint == 'stock.stock_list' }}" href="{{ url_for('stock.stock_list') }}" title="订单列表">
                     <svg width="16" height="16"><use href="#i-list"/></svg> <span>订单列表</span>
@@ -49,8 +55,24 @@
 
         <div>
             <div class="nav-group-label">
+                <span>行情</span>
+                <button type="button" class="side-toggle" data-side-toggle
+                        aria-expanded="true" aria-label="折叠侧栏" title="折叠侧栏">
+                    <svg width="14" height="14"><use href="#i-chevron-left"/></svg>
+                </button>
+            </div>
+            <nav class="nav">
+                <a class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('market.') }}" href="{{ url_for('market.page') }}" title="市场成交额">
+                    <svg width="16" height="16"><use href="#i-chart"/></svg> <span>市场成交额</span>
+                </a>
+            </nav>
+        </div>
+
+        <div>
+            <div class="nav-group-label">
                 <span>监控</span>
-                {# 折叠控件：折叠后侧栏只留图标。图标由 theme.js 按当前状态切换（chevron 方向） #}
+                {# 折叠控件：四个组标题行右侧各一个，状态同步（theme.js 绑定全部 data-side-toggle）；
+                   折叠后侧栏只留图标，chevron 方向由 theme.js 按当前状态切换 #}
                 <button type="button" class="side-toggle" data-side-toggle
                         aria-expanded="true" aria-label="折叠侧栏" title="折叠侧栏">
                     <svg width="14" height="14"><use href="#i-chevron-left"/></svg>
@@ -71,7 +93,13 @@
         </div>
 
         <div>
-            <div class="nav-group-label"><span>系统</span></div>
+            <div class="nav-group-label">
+                <span>系统</span>
+                <button type="button" class="side-toggle" data-side-toggle
+                        aria-expanded="true" aria-label="折叠侧栏" title="折叠侧栏">
+                    <svg width="14" height="14"><use href="#i-chevron-left"/></svg>
+                </button>
+            </div>
             <nav class="nav">
                 <a class="nav-item {{ 'active' if request.endpoint == 'auth.profile' }}" href="{{ url_for('auth.profile') }}" title="账户设置">
                     <svg width="16" height="16"><use href="#i-cog"/></svg> <span>账户设置</span>

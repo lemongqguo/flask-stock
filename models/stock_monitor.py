@@ -26,6 +26,7 @@ from models.account_settings import (
     resolve_alarm_recipients,
     resolve_bench_code,
 )
+from models.market_turnover import MarketDailyTurnover
 from models.stock_master import StockMaster
 from models.stock_warehouse import StockWarehouse
 from models.stock_pe import StockPe
@@ -96,6 +97,10 @@ class StockMonitor:
         self._executor_lock = threading.Lock()
         # 基准指数日线每交易日只需同步一次，这里记住上次同步日期
         self._bench_synced_date = None
+        # 市场成交额自动同步（009，ADR-008）：下次到点时间（monotonic），0 = 启动后首轮即同步
+        self._turnover_next_sync_at = 0.0
+        self._turnover_last_at = None   # 最近一次自动同步时间（墙钟，供状态展示）
+        self._turnover_last_ok = None   # 最近一次自动同步成败
         # 生效基准指数（账户设置 > IND_BENCH > 沪深300）：_check_indicators 每只股票都会问一次，
         # 直接打库会放大成 N 次查询，故缓存 60 秒（改设置后一分钟内生效）
         self._bench_code_cache = None
@@ -249,6 +254,8 @@ class StockMonitor:
             'recipients': len(resolve_alarm_recipients()['recipients']),
             'xueqiu_backoff_remaining': int(self._xueqiu_backoff_remaining()),
             'xueqiu_backoff_reason': self._xueqiu_backoff_reason,
+            'turnover_last_sync_at': self._turnover_last_at,
+            'turnover_last_sync_ok': self._turnover_last_ok,
             'stats': dict(self.stats),
         }
 
@@ -632,6 +639,40 @@ class StockMonitor:
             self._bench_synced_date = today
         return saved > 0
 
+    def _maybe_sync_turnover(self):
+        """
+        市场成交额自动同步（009，ADR-008）：每 TURNOVER_AUTO_SYNC_INTERVAL 秒一次（默认 3h）。
+
+        - 走增量路径（库非空只取最近约 60 个交易日）；**空库跳过**——避免无人值守时
+          腾讯备源全量写入造成口径污染（历史全量应 CSV 导入或手动同步）；
+        - **失败也计入间隔**：交易时段轮间隔为 0，失败若下轮重试等于每几秒打一次挂掉的源；
+        - 与雪球无关（东财/腾讯源），调用点在雪球退避检查之前，Token 失效不阻断本任务。
+        """
+        if not getattr(self.config, 'TURNOVER_AUTO_SYNC_ENABLED', True):
+            return False
+        try:
+            interval = max(60, int(getattr(self.config, 'TURNOVER_AUTO_SYNC_INTERVAL', 10800) or 10800))
+        except (TypeError, ValueError):
+            interval = 10800  # 非法配置形态回落默认，确保先置位再执行（防每轮报错风暴）
+        now = time.monotonic()
+        if now < self._turnover_next_sync_at:
+            return False
+        self._turnover_next_sync_at = now + interval  # 到点即置位，成败都计间隔（防重试风暴）
+        try:
+            if MarketDailyTurnover.count() == 0:
+                logger.info('成交额库为空，跳过自动同步（请先导入历史 CSV 或手动点「同步数据」）')
+                return False
+            summary = MarketDailyTurnover.sync_from_source('auto')
+        except Exception:
+            self.stats['errors'] += 1
+            self._turnover_last_ok = False
+            logger.exception('市场成交额自动同步失败')
+            return False
+        self._turnover_last_at = time.strftime('%Y-%m-%d %H:%M:%S')
+        self._turnover_last_ok = True
+        logger.info('市场成交额自动同步完成：%s', summary)
+        return True
+
     def _check_indicators(self, stock, stock_data):
         """
         采集指标 → 幂等落库 → 命中告警。
@@ -918,6 +959,13 @@ class StockMonitor:
             except Exception:
                 self.stats['errors'] += 1
                 logger.exception('每日汇总邮件处理失败')
+
+            # 市场成交额自动同步：与雪球无关（东财/腾讯源），同样放在退避检查之前
+            try:
+                self._maybe_sync_turnover()
+            except Exception:
+                self.stats['errors'] += 1
+                logger.exception('市场成交额自动同步处理失败')
 
             # 雪球退避期（Token 失效/限流）：整轮跳过，等退避结束再试
             backoff = self._xueqiu_backoff_remaining()

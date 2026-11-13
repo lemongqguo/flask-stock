@@ -1,0 +1,490 @@
+{% extends "base.html" %}
+
+{% block title %}市场成交额 - 股池监控台{% endblock %}
+{% block crumb %}市场成交额{% endblock %}
+
+{#
+  市场成交额（009 · 2026-11-12 看板改版）：按用户指定模板（logs/index.html）移植。
+  结构：顶栏（标题 + 数据源徽标 + 同步按钮）→ hero（万亿大数字 + 6 指标卡）→
+  自绘 canvas 走势图（滚轮缩放 / 拖拽平移 / 悬停明细 / 六档交易日区间）→ 页脚口径。
+  页面只读库：加载 / 60s 自动刷新 / 区间切换都只打本站 API；只有「同步数据」按钮请求外部数据源。
+  缺失值（北证 2022-04-29 前 / 深市开业前）渲染「—」而不是 0。
+  图表零外部依赖（自绘 canvas，离线可用）；颜色经 cssVar() 读取，切主题自动重绘（D-16 约定）。
+#}
+{% block content %}
+<div class="mk-wrap">
+    <header class="mk-topbar">
+        <div class="mk-title">A股成交额<small>上证指数 + 深证成指 + 北证50</small></div>
+        <div class="mk-badges">
+            <button type="button" class="btn btn-primary" data-sync-turnover
+                    data-sync-url="{{ url_for('market.api_sync') }}"
+                    title="从数据源同步最新成交额（东财主源，失败自动切腾讯备源）">
+                <svg width="15" height="15"><use href="#i-refresh"/></svg> <span data-sync-text>同步数据</span>
+            </button>
+            <span class="mk-badge" id="mkSource">数据源加载中</span>
+            <span class="mk-updated" id="mkUpdated">--</span>
+        </div>
+    </header>
+
+    {% if not dashboard %}
+    <div class="card" style="padding:20px">
+        <div class="empty-row" style="padding:48px 20px">暂无成交额数据，请先入库</div>
+        <div class="hint-inline" style="margin:0 0 8px">
+            <svg width="15" height="15"><use href="#i-info"/></svg>
+            <div>
+                两种入库方式：<br>
+                1. <b>导入历史全量</b>（1990 年至今，推荐）：项目根目录执行 <code>flask import-turnover [csv路径]</code>（幂等可重复执行）；<br>
+                2. <b>只同步最新数据</b>：点右上角「同步数据」，或执行 <code>flask sync-turnover</code>。库为空时备源可全量写入，但腾讯早年历史与东财口径有差异，建议优先导入 CSV。
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <section class="mk-card mk-hero">
+        <div>
+            <div class="mk-eyebrow">最新交易日 <span id="mkDate">--</span></div>
+            <div class="mk-big"><span id="mkTotal">--</span><em>万亿</em></div>
+            <div class="mk-rank">历史排名第 <b id="mkRank">-</b> 位 · 共 <span id="mkDays">-</span> 个交易日</div>
+        </div>
+        <div class="mk-hero-right">
+            <div class="mk-metric"><span>沪市</span><b id="mkSh">--</b></div>
+            <div class="mk-metric"><span>深市</span><b id="mkSz">--</b></div>
+            <div class="mk-metric"><span>北证</span><b id="mkBj">--</b></div>
+            <div class="mk-metric"><span>近 20 日均值</span><b id="mkAvg">--</b></div>
+            <div class="mk-metric"><span id="mkPeakLabel">历史峰值</span><b id="mkPeak">--</b></div>
+            <div class="mk-metric"><span>较前一交易日</span><b id="mkChg">--</b></div>
+        </div>
+    </section>
+
+    <section class="mk-card mk-chart-card">
+        <div class="mk-chart-head">
+            <div class="mk-chart-title">
+                <span>沪深北合计成交额</span>
+                <small id="mkRangeText">--</small>
+            </div>
+            <div class="mk-ranges" id="mkRanges">
+                <button type="button" data-days="22">1月</button>
+                <button type="button" data-days="66">3月</button>
+                <button type="button" data-days="130">6月</button>
+                <button type="button" data-days="245" class="active">1年</button>
+                <button type="button" data-days="735">3年</button>
+                <button type="button" data-days="0">全部</button>
+            </div>
+        </div>
+        <div class="mk-chart-wrap" id="mkChartWrap">
+            <canvas id="mkChart"></canvas>
+            <div class="mk-tooltip" id="mkTip"></div>
+            <div id="mkLoadErr" style="position:absolute;inset:0;display:none;place-items:center;color:var(--mk-muted);font-size:12.5px">成交额数据加载失败，请稍后重试</div>
+        </div>
+    </section>
+
+    <footer class="mk-foot">
+        滚轮缩放 · 按住拖拽平移 · 悬停查看明细 · 每 60 秒自动刷新<br>
+        口径：沪 = 上证指数 · 深 = 深证成指 · 北 = 北证50（2022-04-29 起），合计不含基金、债券；缺失显示 —；
+        盘中同步为累计快照，收盘后同步覆盖为终值 · 仅供研究参考
+    </footer>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* 依赖模板变量注入的页面专属脚本（开发规范允许保留在 block scripts） */
+(function () {
+    /* ---------------- 同步数据（空态也可用） ---------------- */
+    const syncBtn = document.querySelector('[data-sync-turnover]');
+    if (syncBtn) {
+        const label = syncBtn.querySelector('[data-sync-text]');
+        const DEFAULT_TEXT = '同步数据';
+        const reset = (text, delay) => {
+            if (label) label.textContent = text;
+            syncBtn.classList.remove('is-loading');
+            setTimeout(() => {
+                syncBtn.disabled = false;
+                if (label) label.textContent = DEFAULT_TEXT;
+            }, delay);
+        };
+        syncBtn.addEventListener('click', () => {
+            if (syncBtn.disabled) return;
+            syncBtn.disabled = true;
+            syncBtn.classList.add('is-loading');
+            if (label) label.textContent = '同步中…';
+            fetch(syncBtn.dataset.syncUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+            })
+                .then(resp => resp.json().then(data => ({ ok: resp.ok, data: data })))
+                .then(result => {
+                    if (!result.ok || !result.data.ok) {
+                        reset((result.data && result.data.error) || '同步失败', 3500);
+                        return;
+                    }
+                    // 成功后重载：空态→有数据态需要服务端重渲染；有数据态顺带刷新 hero 与图表
+                    if (label) label.textContent = '已同步 ' + result.data.days + ' 个交易日';
+                    syncBtn.classList.remove('is-loading');
+                    setTimeout(() => window.location.reload(), 1200);
+                })
+                .catch(() => reset('同步失败', 3000));
+        });
+    }
+
+    /* ---------------- 看板（有数据才初始化） ---------------- */
+    const wrap = document.getElementById('mkChartWrap');
+    if (!wrap) return;
+
+    const apiUrl = {{ url_for('market.api_turnover') | tojson }};
+    const canvas = document.getElementById('mkChart');
+    const ctx = canvas.getContext('2d');
+    const tip = document.getElementById('mkTip');
+    const loadErr = document.getElementById('mkLoadErr');
+    const rangeBox = document.getElementById('mkRanges');
+
+    const PAD = { left: 64, right: 18, top: 18, bottom: 30 };
+    const MIN_POINTS = 20;
+    const DEFAULT_DAYS = 245;
+
+    let rows = [];
+    let viewStart = 0;
+    let viewEnd = 0;
+    let hoverIndex = -1;
+    let dragState = null;
+    let lastStamp = '';
+
+    function cssVar(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function clamp(value, low, high) {
+        return Math.min(high, Math.max(low, value));
+    }
+
+    // 缺失渲染「—」（「没数据」和「成交为零」是两回事）；≥1 万亿换万亿单位
+    function fmtAmount(v) {
+        if (v === null || v === undefined) return '—';
+        if (v >= 10000) return (v / 10000).toFixed(2) + ' 万亿';
+        return v.toFixed(0) + ' 亿';
+    }
+
+    function fmtAxis(v) {
+        if (v >= 10000) return (v / 10000).toFixed(1) + '万亿';
+        return Math.round(v) + '亿';
+    }
+
+    function plotWidth() {
+        return wrap.clientWidth - PAD.left - PAD.right;
+    }
+
+    function visibleRows() {
+        return rows.slice(viewStart, viewEnd + 1);
+    }
+
+    function setWindow(start, end) {
+        viewStart = clamp(start, 0, rows.length - 1);
+        viewEnd = clamp(end, viewStart, rows.length - 1);
+        hoverIndex = -1;
+        tip.style.display = 'none';
+        draw();
+    }
+
+    function setDays(days) {
+        if (rows.length === 0) return;
+        const size = days > 0 ? Math.min(days, rows.length) : rows.length;
+        setWindow(rows.length - size, rows.length - 1);
+    }
+
+    function markActiveButton(days) {
+        Array.prototype.forEach.call(rangeBox.children, function (button) {
+            button.classList.toggle('active', button.dataset.days === String(days));
+        });
+    }
+
+    function clearActiveButton() {
+        Array.prototype.forEach.call(rangeBox.children, function (button) {
+            button.classList.remove('active');
+        });
+    }
+
+    function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const w = wrap.clientWidth;
+        const h = wrap.clientHeight;
+        if (!w || !h) return;
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        draw();
+    }
+
+    function draw() {
+        const w = wrap.clientWidth;
+        const h = wrap.clientHeight;
+        if (!w || !h) return;
+        ctx.clearRect(0, 0, w, h);
+        if (rows.length === 0) return;
+
+        const pts = visibleRows();
+        if (pts.length === 0) return;
+
+        document.getElementById('mkRangeText').textContent = pts[0][0] + ' ~ ' + pts[pts.length - 1][0];
+
+        // 颜色每次绘制时取（双主题）；切主题由 MutationObserver 触发重绘（D-16）
+        const C = {
+            guide: cssVar('--mk-guide'), muted: cssVar('--mk-muted'),
+            area: cssVar('--mk-area'), line: cssVar('--mk-accent'),
+            cross: cssVar('--mk-cross'), dot: cssVar('--mk-cyan'),
+        };
+
+        let minValue = Infinity;
+        let maxValue = -Infinity;
+        for (let i = 0; i < pts.length; i++) {
+            if (pts[i][4] < minValue) minValue = pts[i][4];
+            if (pts[i][4] > maxValue) maxValue = pts[i][4];
+        }
+        const span = Math.max(maxValue - minValue, 1);
+        minValue = Math.max(0, minValue - span * 0.12);
+        maxValue = maxValue + span * 0.12;
+
+        const plotW = plotWidth();
+        const plotH = h - PAD.top - PAD.bottom;
+        if (plotW <= 0 || plotH <= 0) return;
+
+        const xAt = function (index) {
+            if (pts.length === 1) return PAD.left + plotW / 2;
+            return PAD.left + (index / (pts.length - 1)) * plotW;
+        };
+        const yAt = function (value) {
+            return PAD.top + ((maxValue - value) / (maxValue - minValue)) * plotH;
+        };
+
+        // 只画淡横向参考线（模板同款）：不画竖向网格与轴边框，避免「表格框」（D-16）
+        ctx.font = '12px "Segoe UI", "Microsoft YaHei", sans-serif';
+        ctx.textBaseline = 'middle';
+        const ticks = 4;
+        for (let i = 0; i <= ticks; i++) {
+            const value = minValue + ((maxValue - minValue) * i) / ticks;
+            const y = yAt(value);
+            ctx.beginPath();
+            ctx.strokeStyle = C.guide;
+            ctx.lineWidth = 1;
+            ctx.moveTo(PAD.left, y);
+            ctx.lineTo(w - PAD.right, y);
+            ctx.stroke();
+            ctx.fillStyle = C.muted;
+            ctx.textAlign = 'right';
+            ctx.fillText(fmtAxis(value), PAD.left - 10, y);
+        }
+
+        const longRange = pts.length > 400;
+        const labelCount = w < 640 ? 3 : 6;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let i = 0; i < labelCount; i++) {
+            const index = Math.round((i / (labelCount - 1)) * (pts.length - 1));
+            const text = longRange ? pts[index][0].slice(0, 7) : pts[index][0].slice(5);
+            ctx.fillStyle = C.muted;
+            ctx.fillText(text, xAt(index), h - PAD.bottom + 10);
+        }
+
+        const linePath = new Path2D();
+        linePath.moveTo(xAt(0), yAt(pts[0][4]));
+        for (let i = 1; i < pts.length; i++) {
+            linePath.lineTo(xAt(i), yAt(pts[i][4]));
+        }
+
+        // 面积填充 + 主线
+        ctx.beginPath();
+        ctx.moveTo(xAt(0), h - PAD.bottom);
+        for (let i = 0; i < pts.length; i++) {
+            ctx.lineTo(xAt(i), yAt(pts[i][4]));
+        }
+        ctx.lineTo(xAt(pts.length - 1), h - PAD.bottom);
+        ctx.closePath();
+        ctx.fillStyle = C.area;
+        ctx.fill();
+
+        ctx.strokeStyle = C.line;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke(linePath);
+
+        if (hoverIndex >= 0 && hoverIndex < pts.length) {
+            const x = xAt(hoverIndex);
+            const y = yAt(pts[hoverIndex][4]);
+            ctx.beginPath();
+            ctx.strokeStyle = C.cross;
+            ctx.lineWidth = 1;
+            ctx.moveTo(x, PAD.top);
+            ctx.lineTo(x, h - PAD.bottom);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = C.dot;
+            ctx.fill();
+        }
+    }
+
+    function showTooltip(index) {
+        const pts = visibleRows();
+        const item = pts[index];
+        if (!item) return;
+        const w = wrap.clientWidth;
+        const plotW = plotWidth();
+        const x = PAD.left + (pts.length === 1 ? plotW / 2 : (index / (pts.length - 1)) * plotW);
+
+        tip.innerHTML = '<div class="t-date">' + item[0] + '</div>'
+            + '<div class="t-row"><span>沪深北合计</span><b>' + fmtAmount(item[4]) + '</b></div>'
+            + '<div class="t-row"><span>沪市</span><b>' + fmtAmount(item[1]) + '</b></div>'
+            + '<div class="t-row"><span>深市</span><b>' + fmtAmount(item[2]) + '</b></div>'
+            + '<div class="t-row"><span>北证</span><b>' + fmtAmount(item[3]) + '</b></div>';
+        tip.style.display = 'block';
+
+        const tipWidth = tip.offsetWidth;
+        let left = x + 14;
+        if (left + tipWidth > w - 6) left = x - tipWidth - 14;
+        tip.style.left = Math.max(6, left) + 'px';
+        tip.style.top = '22px';
+    }
+
+    function indexFromX(clientX) {
+        const rect = canvas.getBoundingClientRect();
+        const plotW = rect.width - PAD.left - PAD.right;
+        const ratio = clamp((clientX - rect.left - PAD.left) / plotW, 0, 1);
+        const size = viewEnd - viewStart + 1;
+        return Math.round(ratio * (size - 1));
+    }
+
+    function render(data) {
+        document.getElementById('mkSource').textContent = data.source;
+        document.getElementById('mkUpdated').textContent = '更新于 ' + data.updated_at;
+        document.getElementById('mkDate').textContent = data.latest.date;
+        document.getElementById('mkTotal').textContent = (data.latest.total / 10000).toFixed(2);
+        document.getElementById('mkSh').textContent = fmtAmount(data.latest.sh);
+        document.getElementById('mkSz').textContent = fmtAmount(data.latest.sz);
+        document.getElementById('mkBj').textContent = fmtAmount(data.latest.bj);
+        document.getElementById('mkRank').textContent = data.stats.rank;
+        document.getElementById('mkDays').textContent = data.stats.days.toLocaleString();
+        document.getElementById('mkAvg').textContent = fmtAmount(data.stats.avg20);
+        document.getElementById('mkPeak').textContent = fmtAmount(data.stats.peak_total);
+        document.getElementById('mkPeakLabel').textContent = '历史峰值 · ' + data.stats.peak_date;
+
+        const chg = document.getElementById('mkChg');
+        const history = data.history;
+        if (history.length >= 2) {
+            const prev = history[history.length - 2][4];
+            const pct = ((history[history.length - 1][4] - prev) / prev) * 100;
+            chg.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+            chg.className = pct >= 0 ? 'up' : 'down';
+        } else {
+            chg.textContent = '—';
+            chg.className = '';
+        }
+
+        // 自动刷新保留当前窗口大小（锚定最新），首次加载默认近 1 年
+        const firstLoad = rows.length === 0;
+        const keepSize = firstLoad ? 0 : viewEnd - viewStart + 1;
+        rows = history;
+        if (firstLoad) {
+            setDays(DEFAULT_DAYS);
+            markActiveButton(DEFAULT_DAYS);
+        } else {
+            viewEnd = rows.length - 1;
+            viewStart = Math.max(0, viewEnd - keepSize + 1);
+            draw();
+        }
+    }
+
+    async function load() {
+        try {
+            const response = await fetch(apiUrl + '?t=' + Date.now(), {
+                cache: 'no-store', headers: { 'X-Requested-With': 'fetch' },
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const data = await response.json();
+            if (!data || data.empty || !data.history) return;
+            loadErr.style.display = 'none';
+            if (data.updated_at === lastStamp) return;
+            lastStamp = data.updated_at;
+            render(data);
+        } catch (error) {
+            // 网络异常保留上一次画面；首载失败才显性提示
+            if (rows.length === 0) loadErr.style.display = 'grid';
+        }
+    }
+
+    rangeBox.addEventListener('click', function (event) {
+        const button = event.target.closest('button');
+        if (!button) return;
+        const days = Number(button.dataset.days);
+        setDays(days);
+        markActiveButton(days);
+    });
+
+    canvas.addEventListener('wheel', function (event) {
+        if (rows.length === 0) return;
+        event.preventDefault();
+        const size = viewEnd - viewStart + 1;
+        const ratio = clamp((indexFromX(event.clientX)) / Math.max(size - 1, 1), 0, 1);
+        const factor = event.deltaY > 0 ? 1.2 : 1 / 1.2;
+        const newSize = clamp(Math.round(size * factor), MIN_POINTS, rows.length);
+        const anchor = viewStart + ratio * (size - 1);
+        const start = clamp(Math.round(anchor - ratio * (newSize - 1)), 0, rows.length - newSize);
+        clearActiveButton();
+        setWindow(start, start + newSize - 1);
+    }, { passive: false });
+
+    canvas.addEventListener('mousedown', function (event) {
+        if (rows.length === 0) return;
+        dragState = { x: event.clientX, start: viewStart, end: viewEnd };
+        canvas.classList.add('dragging');
+        tip.style.display = 'none';
+    });
+
+    window.addEventListener('mousemove', function (event) {
+        if (dragState) {
+            const plotW = plotWidth();
+            const size = dragState.end - dragState.start + 1;
+            const moved = Math.round(((event.clientX - dragState.x) / plotW) * size);
+            const start = clamp(dragState.start - moved, 0, rows.length - size);
+            hoverIndex = -1;
+            setWindow(start, start + size - 1);
+            return;
+        }
+        if (event.target !== canvas || rows.length === 0) return;
+        const index = indexFromX(event.clientX);
+        if (index !== hoverIndex) {
+            hoverIndex = index;
+            draw();
+        }
+        showTooltip(index);
+    });
+
+    window.addEventListener('mouseup', function () {
+        if (!dragState) return;
+        dragState = null;
+        canvas.classList.remove('dragging');
+        clearActiveButton();
+    });
+
+    canvas.addEventListener('mouseleave', function () {
+        if (dragState) return;
+        hoverIndex = -1;
+        tip.style.display = 'none';
+        draw();
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+    if (window.ResizeObserver) {
+        new ResizeObserver(resizeCanvas).observe(wrap);
+    }
+
+    // 主题切换重绘（D-16）：画布颜色只在 draw() 时取，切主题必须重绘
+    new MutationObserver(function () {
+        if (rows.length) draw();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    load();
+    // 60s 自动刷新（页面在后台时不做无谓请求，与系统状态轮询同约定）
+    setInterval(function () { if (!document.hidden) load(); }, 60000);
+})();
+</script>
+{% endblock %}

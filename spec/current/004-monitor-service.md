@@ -1,12 +1,13 @@
 # 004 后台监控服务（StockMonitor）
 
-**状态**：已实现　|　**最后更新**：2026-10-26
+**状态**：已实现　|　**最后更新**：2026-11-13
 **实现**：`models/stock_monitor.py`、`utils/mail_sender.py`、`utils/trading_time.py`、`utils/alarm_rules.py`、`utils/alarm_throttle.py`、`utils/snowball_errors.py`、`utils/logging_config.py`、`app.py`、`config.py`
 **相关变更**：
 [2026-10-21 M1 缺陷治理](../changes/2026-10-21-m1-defect-hardening.md)（D-01~D-12）、
 [2026-10-21 雪球接口错误降级](../changes/2026-10-21-xueqiu-error-handling.md)（D-13）、
 [2026-10-21 优雅退出](../changes/2026-10-21-graceful-shutdown.md)（D-14）、
-[2026-10-26 多用户数据隔离](../archive/changes/2026-10-26-multi-user-ownership.md)（本轮结果共享 + 收件人按归属人）
+[2026-10-26 多用户数据隔离](../archive/changes/2026-10-26-multi-user-ownership.md)（本轮结果共享 + 收件人按归属人）、
+[2026-11-13 成交额增量同步 + 自动同步](../changes/2026-11-13-turnover-incremental-auto-sync.md)（监控挂钩 `_maybe_sync_turnover`）
 
 ---
 
@@ -46,14 +47,18 @@
 ### 3.2 主循环 `monitor_loop`
 
 1. 每日汇总邮件（默认 08:30，通常在非交易时段）→ 与时段无关，先处理；
-2. 雪球退避期内（`xueqiu_backoff_remaining > 0`）→ **整轮跳过**，休眠后继续；
-3. `StockMaster.get_active_stocks(limit=MONITOR_MAX_STOCKS)` 取活跃订单——**刻意不加归属过滤**，
+2. **市场成交额自动同步**（2026-11-13，[ADR-008](../decisions/008-turnover-incremental-and-auto-sync.md)）：
+   `_maybe_sync_turnover()` 每 `TURNOVER_AUTO_SYNC_INTERVAL` 秒（默认 10800 = 3h）走一次增量同步；
+   **到点即置位、失败也计间隔**（交易时段轮间隔为 0，防重试风暴）；**空库跳过**（防无人值守口径污染）；
+   与雪球无关（东财/腾讯源），故同样放在退避检查**之前**；异常隔离不中断主循环；
+3. 雪球退避期内（`xueqiu_backoff_remaining > 0`）→ **整轮跳过**，休眠后继续；
+4. `StockMaster.get_active_stocks(limit=MONITOR_MAX_STOCKS)` 取活跃订单——**刻意不加归属过滤**，
    监控必须照看所有人的订单；取完之后立刻 `_reset_round_cache()` 清空本轮共享缓存；
-4. 无活跃订单 → `_sleep(MONITOR_ERROR_SLEEP)`；
-5. 有 → `ThreadPoolExecutor` 并发跑 `check_and_alert`（**交易 / 非交易时段同一条链路**）；
-6. 轮结束后按当前时段休眠：交易时段 `MONITOR_ROUND_INTERVAL`（默认 0）、
+5. 无活跃订单 → `_sleep(MONITOR_ERROR_SLEEP)`；
+6. 有 → `ThreadPoolExecutor` 并发跑 `check_and_alert`（**交易 / 非交易时段同一条链路**）；
+7. 轮结束后按当前时段休眠：交易时段 `MONITOR_ROUND_INTERVAL`（默认 0）、
    非交易时段 `MONITOR_OFF_HOURS_ROUND_INTERVAL`（默认 1800s）；
-7. 任何异常 → `logger.exception` + 退避后继续，循环不中断。
+8. 任何异常 → `logger.exception` + 退避后继续，循环不中断。
 
 > **2026-10-23 起非交易时段不再停采**：收盘后 / 午休 / 盘前 / 周末照常跑整轮，
 > 只是把"每只标的的节流"和"轮间隔"两个旋钮调大（单只标的再次采集周期约 46 min → 约 80 min）。
@@ -130,7 +135,7 @@
 - 日志相关环境变量：`LOG_LEVEL`（级别，DEBUG 模式强制 DEBUG）、`LOG_DIR`（目录，默认**项目根目录下** `logs/`）、
   `LOG_TO_FILE`（是否落盘）、`LOG_STREAM`（控制台输出流，默认 stdout；每次写入动态解析，兼容 `--capture-output` 的重定向）。
 - `monitor.stats` 累计 `rounds / checks / alarms / errors / last_round_at`。
-- `monitor.get_status()` 额外返回 `xueqiu_backoff_remaining` / `xueqiu_backoff_reason`。
+- `monitor.get_status()` 额外返回 `xueqiu_backoff_remaining` / `xueqiu_backoff_reason` / `turnover_last_sync_at` / `turnover_last_sync_ok`（2026-11-13 起）。
 
 ## 4. 验收条件
 

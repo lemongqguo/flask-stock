@@ -1,6 +1,6 @@
 # Flask Stock API 与批量操作使用文档
 
-> 最后更新：2026-11-10  
+> 最后更新：2026-11-12  
 > 默认服务地址：`http://127.0.0.1:5000`  
 > 本文依据当前 Flask 路由实现整理，面向脚本调用、订单批量维护和行情批量查询。
 
@@ -31,6 +31,8 @@
 | POST | `/stock/refresh_quotes` | 按订单 ID 批量读取数据库中的最新行情 |
 | GET | `/stock/api/system_status` | 获取监控、交易时段、冷却和行情源状态 |
 | GET | `/stock/api/kline/<stock_id>` | 获取指定订单最近 60 条 K 线 |
+| GET | `/stock/market/api/turnover` | 获取沪深北三市每日成交额全量历史与统计（009） |
+| POST | `/stock/market/api/sync` | 手动同步最新市场成交额（009，冷却 60s） |
 
 ### 2.2 表单接口
 
@@ -327,6 +329,70 @@ curl -sS \
 - 无数据时返回 `success: true` 和空 `klines`。
 - 订单不存在或无权访问时返回 HTTP `403`：`{"success":false,"error":"无权访问该标的"}`。
 - 服务异常时返回 HTTP `500` 和 `success: false`。
+
+### 4.5 获取市场成交额（009）
+
+```http
+GET /stock/market/api/turnover
+```
+
+请求示例：
+
+```bash
+curl -sS \
+  -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  "${BASE_URL}/stock/market/api/turnover"
+```
+
+成功响应（单位**亿元**，展示值两位小数；缺失为 `null`）：
+
+```json
+{
+  "updated_at": "2026-11-12 15:16:20",
+  "source": "腾讯行情",
+  "latest": {"date": "2026-11-12", "sh": 8795.37, "sz": 10525.45, "bj": 139.61, "total": 19460.43},
+  "stats": {"rank": 268, "days": 8807, "peak_date": "2026-01-14", "peak_total": 39871.25, "avg20": 16731.16},
+  "history": [["1990-12-19", 0.0057, null, null, 0.0057], ["2026-11-12", 8795.37, 10525.45, 139.61, 19460.43]]
+}
+```
+
+说明：
+
+- `history` 按交易日升序，每行 `[日期, 沪市, 深市, 北证, 合计]`；北证 2022-04-29 前为 `null`（不伪造 0）。
+- 口径：沪=上证指数、深=深证成指、北=北证50，三指数成交额字段均为全市场口径；合计不含基金、债券。
+- 表为空时返回 `{"empty": true}`（HTTP 200），调用方应先判 `empty`。
+- 本接口**只读数据库**，不打外部数据源；数据更新走 4.6 或 CLI。
+
+### 4.6 同步市场成交额（009）
+
+```http
+POST /stock/market/api/sync
+```
+
+请求示例：
+
+```bash
+curl -sS -X POST \
+  -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  -H 'Content-Type: application/json' \
+  "${BASE_URL}/stock/market/api/sync"
+```
+
+成功响应：
+
+```json
+{"ok": true, "source": "腾讯行情", "mode": "incremental", "days": 60, "affected": 120, "protected_before": null, "start_date": "2026-08-14", "end_date": "2026-11-12"}
+```
+
+说明：
+
+- 数据源固定 `auto`：东财主源失败自动切腾讯备源。**2026-11-13 起智能模式**：库非空走增量（`mode=incremental`，只取最近约 60 个交易日，`protected_before=null`）；库空 / 库最新距今 >100 自然日走全量（`mode=full`）。**全量 + 库非空时腾讯备源只写最近 60 个交易日**（`protected_before` 为保护起点，更早历史不动）；库为空时备源可全量写入。
+- 监控线程每 3h 自动增量同步（`TURNOVER_AUTO_SYNC_ENABLED` / `TURNOVER_AUTO_SYNC_INTERVAL`），与本接口共用同一同步逻辑；页面 60s 自动刷新只读库。
+- `affected` 为 MySQL 语义受影响行数（插入计 1、更新计 2），仅供日志参考。
+- 冷却 `TURNOVER_SYNC_COOLDOWN`（默认 60s）内重复调用返回 HTTP `429`：`{"ok":false,"error":"同步过于频繁，请 N 秒后再试"}`；失败也计入冷却。
+- 数据源不可用或校验未通过返回 HTTP `502`：`{"ok":false,"error":"同步失败：数据源不可用或数据校验未通过，详见日志"}`。
+- 盘中同步的当日数据为累计快照，收盘后再次同步即覆盖为终值。
+- 历史全量导入不走本接口，用 CLI：`flask import-turnover [csv路径]`（默认 example CSV，幂等）。
 
 ## 5. 订单表单接口
 

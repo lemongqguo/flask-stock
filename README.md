@@ -1,6 +1,6 @@
 # Flask Stock 股票监控系统
 
-基于 Flask、MySQL、Gunicorn 和雪球行情数据的股票监控应用，支持多用户数据隔离、订单管理、行情与 K 线监控、指标监控、邮件告警和 AI 个股分析。
+基于 Flask、MySQL、Gunicorn 和雪球行情数据的股票监控应用，支持多用户数据隔离、订单管理、行情与 K 线监控、指标监控、邮件告警、AI 个股分析和沪深北三市每日成交额展示（行情页）。
 
 本文档给出一套从空环境到正式运行的实施流程，包括 MySQL 准备、环境变量配置、Docker 镜像构建、容器启动、首次登录、升级回滚、数据库备份恢复和常见故障排查。
 
@@ -358,6 +358,25 @@ docker exec flask-stock flask --app app init-db
 
 正常情况下不需要手动执行，因为容器每次启动都会自动完成这一步。
 
+### 6.4 市场成交额数据初始化（可选，009）
+
+「行情 → 市场成交额」页展示沪深北三市每日总成交额（1990 年至今，单位亿元）。新表 `market_daily_turnover` 随启动自动创建，**历史数据需要手动导入一次**：
+
+```bash
+# 导入历年全量 CSV（默认读取 example/A股每日成交额_1990至今.csv，幂等可重复执行）
+docker exec flask-stock flask --app app import-turnover
+
+# 日常更新：同步最新成交额（东财主源失败自动切腾讯备源）
+docker exec flask-stock flask --app app sync-turnover
+```
+
+说明：
+
+- 导入前会整体校验 CSV（表头 / 日期 / 数值 / 合计=分量和），任何一行不合法即整体拒绝，不会导入一半。
+- 腾讯备源在库非空时**只更新最近 60 个交易日**（早年两源口径差异大），更早历史以 CSV 导入为准；库为空时备源可全量写入。
+- 页面右上角「同步数据」按钮与 `sync-turnover` 等价，冷却 60 秒（`TURNOVER_SYNC_COOLDOWN` 可调）。
+- 盘中同步的当日数据为累计快照，收盘后再次同步即覆盖为终值；北证 2022-04-29 前无指数级成交额，页面显示「—」。
+
 ## 7. 日常容器运维
 
 ### 7.1 启动、停止与重启
@@ -556,6 +575,7 @@ mysql -h 192.168.1.10 -P 3306 -u stock -p stockdb \
 - `stock_alarm`、`stock_kline`
 - `stock_indicator`、`stock_indicator_config`、`stock_bench_kline`
 - `stock_ai_report`、`stock_ai_config`
+- `market_daily_turnover`（009 市场成交额）
 
 ### 9.2 升级数据库前的注意事项
 

@@ -269,6 +269,24 @@ def _create_tables(conn):
             )
         """)
 
+        # 市场每日成交额（009 市场成交额）：沪深北三市 + 合计，单位亿元（4 位小数，与历史 CSV 一致）。
+        # trade_date 唯一键 + ON DUPLICATE KEY UPDATE 幂等 upsert：当日盘中快照允许被收盘终值覆盖。
+        # 北证 2022-04-29 前无指数级成交额，对应列留 NULL（不伪造 0）。
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS market_daily_turnover (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                trade_date DATE NOT NULL,
+                sh_amount DECIMAL(18,4) NULL,
+                sz_amount DECIMAL(18,4) NULL,
+                bj_amount DECIMAL(18,4) NULL,
+                total_amount DECIMAL(18,4) NOT NULL,
+                source VARCHAR(16) NOT NULL DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_turnover_date (trade_date)
+            )
+        """)
+
 
 # 针对已存在的存量库补索引（CREATE TABLE IF NOT EXISTS 不会改动已有表）
 _INDEX_MIGRATIONS = [

@@ -15,7 +15,7 @@ Flask Stock 是一个基于 Flask 框架开发的股票订单监控系统，主�
 |------|------|
 | 后端框架 | Flask 2.3.3 |
 | 数据库 | MySQL (PyMySQL + DBUtils连接池) |
-| 前端 | 自建设计系统（CSS 变量 + 内联 SVG sprite，双主题）；Chart.js 4.4.1（K 线图唯一外部依赖） |
+| 前端 | 自建设计系统（CSS 变量 + 内联 SVG sprite，双主题）；Chart.js 4.4.1（仅 K 线页外部依赖；市场成交额页自绘 canvas，009 看板改版） |
 | 数据分析 | Pandas 3.1.0（2026-10-27 由 2.0.3 对齐到实际安装版本） |
 | 数据源 | 雪球财经 (pysnowball) |
 | 部署 | Python 3.12 + gunicorn 26.2.0（单进程 gthread）；虚拟环境 `stockvenv/` |
@@ -41,10 +41,12 @@ flask-stock/
 │   ├── stock_kline.py     # K线数据模型
 │   ├── stock_indicator.py # 指标监控模型（快照/阈值覆盖/基准日线）
 │   ├── stock_ai.py        # AI 报告与参数模型（007）
+│   ├── market_turnover.py # 市场成交额模型（009）
 │   └── stock_monitor.py   # 监控服务模型
 ├── views/                 # 视图控制器
 │   ├── auth.py            # 认证相关路由
 │   ├── ai_analysis.py     # AI 分析路由（007）
+│   ├── market.py          # 市场成交额路由（009）
 │   └── stock_orders.py    # 股票订单路由
 ├── utils/                 # 工具类
 │   ├── decorators.py      # 装饰器(登录验证)
@@ -53,6 +55,7 @@ flask-stock/
 │   ├── indicator_rules.py # 指标判定规则（纯函数，006）
 │   ├── ai_client.py       # OpenAI 兼容客户端（007）
 │   ├── ai_prompt.py       # 提示词组装与解析（007）
+│   ├── turnover_source.py # 成交额数据源（东财主源+腾讯备源，009）
 │   └── mail_sender.py     # 邮件发送
 ├── templates/             # HTML模板
 │   ├── base.html          # 基础模板（侧栏 + topbar + 双主题）
@@ -63,6 +66,7 @@ flask-stock/
 │   ├── recent_alarms.html    # 告警历史（时间线）
 │   ├── indicator_list.html   # 指标监控（006）
 │   ├── ai_analysis.html   # AI 分析（报告 / 追问 / 参数，007）
+│   ├── market_turnover.html # 市场成交额看板（hero 大数字 + 6 指标 + 自绘 canvas，009）
 │   ├── account.html       # 账户设置（资料/改密码/通知偏好合并）
 │   └── error.html         # 错误页（独立整页）
 ├── static/                # 静态资源
@@ -354,6 +358,20 @@ flask-stock/
 | dimensions | VARCHAR(128) | 默认分析维度：`valuation,technical,relative,position,risk` 逗号串；NULL = 全维度 |
 | updated_at | TIMESTAMP | 更新时间（ON UPDATE） |
 
+#### market_daily_turnover (市场每日成交额表 · 009)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT | 主键 |
+| trade_date | DATE | 交易日，唯一键 `uk_turnover_date`（幂等 upsert 依据） |
+| sh_amount | DECIMAL(18,4) NULL | 沪市成交额（亿元，上证指数口径） |
+| sz_amount | DECIMAL(18,4) NULL | 深市成交额（亿元，深证成指口径） |
+| bj_amount | DECIMAL(18,4) NULL | 北证成交额（亿元，北证50；2022-04-29 前 NULL） |
+| total_amount | DECIMAL(18,4) NOT NULL | 合计（亿元，缺失按 0 求和，不含基金债券） |
+| source | VARCHAR(16) | 数据来源：`CSV导入` / `东方财富` / `腾讯行情` |
+| created_at / updated_at | TIMESTAMP | 创建 / 更新时间 |
+
+**为何独立建表**：成交额是市场级日频数据，不是订单行情也不是基准收盘价；亿元 4 位小数与历史 CSV 完全一致，导入无损。见 [ADR-006](./decisions/006-turnover-source-and-caliber.md)。
+
 ### 3.2 表关系图
 ```
 ┌─────────────┐
@@ -521,6 +539,34 @@ else:
     return 'normal'
 ```
 
+### 4.7 市场成交额模块（market_bp，009）
+
+**定位**：沪深北三市每日总成交额（1990 年至今）入库与展示。数据源复用用户实测的 `example/fetch_turnover.py` 逻辑，统计口径以 example 为准。
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/stock/market/` | GET | 市场成交额看板：万亿大数字 hero + 6 指标卡 + 自绘 canvas 走势图（六档区间 / 缩放 / 平移 / 悬停 / 60s 自动刷新）；**只读库** |
+| `/stock/market/api/turnover` | GET | 全量历史 + 统计（与 example data.json 同构）；表为空返回 `{"empty":true}` |
+| `/stock/market/api/sync` | POST | 手动同步（auto：东财主源失败切腾讯备源），冷却 `TURNOVER_SYNC_COOLDOWN` 默认 60s |
+
+**模块分层**：
+
+| 层 | 文件 | 职责 |
+|----|------|------|
+| 数据源 | `utils/turnover_source.py` | 东财 push2his 主源 + 腾讯 newfqkline 备源（全量翻页 2000×20 / 增量 count 单页）、条数/新鲜度校验（全量 `validate` / 增量 `validate_recent`）、元→亿元组装；urllib 无新依赖、无需 Token |
+| 模型 | `models/market_turnover.py` | 幂等 upsert（`execute_many` 批量）、CSV 整体校验导入、同步编排（库非空增量 / 库空全量）、全量备源 60 日保护、统计组装 |
+| 视图 | `views/market.py` | 薄视图：登录校验 → 模型 → 渲染/JSON；同步冷却（进程内存） |
+
+**关键约定**：
+- 口径：沪=上证指数（1.000001/sh000001）、深=**深证成指**（0.399001/sz399001）、北=北证50（0.899050/bj899050）；三指数成交额字段均为全市场口径；合计不含基金债券；
+- **增量同步（2026-11-13，[ADR-008](./decisions/008-turnover-incremental-and-auto-sync.md)）**：库非空且最新距今 ≤100 自然日只取最近约 60 个交易日（东财动态 beg / 北证 lmt / 腾讯 count 单页）；库空 / 超窗 / `--full` 走全量；
+- **备源 60 日写入保护（仅全量路径）**：腾讯早年历史与东财口径差异大，全量 + 库非空时备源只 upsert 最近 60 个交易日；库为空可全量写入；增量窗口本身即保护，不叠加裁剪；
+- **自动同步（2026-11-13）**：监控线程 `_maybe_sync_turnover()` 默认每 3h 增量同步（`TURNOVER_AUTO_SYNC_ENABLED` / `TURNOVER_AUTO_SYNC_INTERVAL`），失败也计间隔、空库跳过、调用点在雪球退避前；
+- 缺失保留 NULL（北证 2022-04-29 前 / 深市开业前），页面渲染「—」不伪造 0；
+- 当日盘中快照允许被收盘终值覆盖（`ON DUPLICATE KEY UPDATE`）；
+- CLI：`flask import-turnover [csv路径]`（默认 example CSV，整体校验通过才写入）、`flask sync-turnover [--source auto|eastmoney|tencent] [--full]`（默认智能模式，`--full` 强制全量校准，建议每月一次）；
+- **看板（2026-11-12 改版）**：按用户模板移植——hero 万亿大数字 + 6 指标卡 + 自绘 canvas（六档区间 1月/3月/6月/1年/3年/全部、滚轮缩放 / 拖拽平移 / 悬停明细、60s 自动刷新只打本站 API），零外部图表依赖（[ADR-007](./decisions/007-turnover-dashboard-self-drawn-canvas.md)）；切主题重绘（D-16）；明细表移除进悬停 tooltip；平铺自适应（全宽 + 图表撑满剩余高度，≥1500px 6 指标单行）。
+
 ---
 
 ## 5. API接口文档
@@ -546,6 +592,23 @@ else:
   ]
 }
 ```
+
+### 5.2 市场成交额接口（009）
+**URL:** `/stock/market/api/turnover`（GET，只读库）/ `/stock/market/api/sync`（POST，冷却 60s）
+**认证:** 需要登录
+
+**响应示例（GET，单位亿元，缺失为 null）：**
+```json
+{
+  "updated_at": "2026-11-12 15:16:20",
+  "source": "腾讯行情",
+  "latest": {"date": "2026-11-12", "sh": 8795.37, "sz": 10525.45, "bj": 139.61, "total": 19460.43},
+  "stats": {"rank": 268, "days": 8807, "peak_date": "2026-01-14", "peak_total": 39871.25, "avg20": 16731.16},
+  "history": [["1990-12-19", 0.0057, null, null, 0.0057]]
+}
+```
+
+表为空返回 `{"empty":true}`；同步成功返回 `{ok,source,mode,days,affected,protected_before,start_date,end_date}`（`mode=incremental/full`，2026-11-13 起），冷却期 429、数据源失败 502。详见 [API.md §4.5/4.6](./API.md)。
 
 ---
 
@@ -588,6 +651,9 @@ else:
 | `AI_TEMPERATURE` / `AI_MAX_TOKENS` | 采样温度 / 单次输出上限（007） | `0.6` / `1200` |
 | `AI_MONTHLY_LIMIT` | 月度调用上限，达限拒绝（0 = 不限，007） | `200` |
 | `AI_TIMEOUT` | 外部调用超时秒数（必传，007）；**推理型模型建议 120~180** | `60` |
+| `TURNOVER_SYNC_COOLDOWN` | 市场成交额页面同步按钮冷却秒数（009，进程内存判定） | `60` |
+| `TURNOVER_AUTO_SYNC_ENABLED` | 监控线程成交额自动同步开关（009，2026-11-13 起） | `1` |
+| `TURNOVER_AUTO_SYNC_INTERVAL` | 自动同步间隔秒数（009，下限 60s，失败也计间隔） | `10800`（3h） |
 
 > 说明：`IND_*` 为全局默认值，可按标的在 `stock_indicator_config` 中覆盖（字段留空即继承）。
 

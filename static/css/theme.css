@@ -55,6 +55,28 @@
   --kline-ma5: #f472b6;
   --kline-ma10: #60a5fa;
   --kline-ma30: #fbbf24;
+  /* 市场成交额看板专用（009 · 2026-11-12 用户模板移植）：蓝主色 + 青徽标，
+     独立于 K 线与 --up/--down 语义色；画布绘制时经 cssVar() 读取，切主题重绘 */
+  --mk-grad: #12203a;
+  --mk-card: #0e141f;
+  --mk-line: rgba(255, 255, 255, .07);
+  --mk-text: #e8eef8;
+  --mk-muted: #7c8ba3;
+  --mk-accent: #2f9bff;
+  --mk-accent-line: rgba(47, 155, 255, .55);
+  --mk-accent-soft: rgba(47, 155, 255, .12);
+  --mk-big: #5db8ff;
+  --mk-cyan: #22d3ee;
+  --mk-cyan-line: rgba(34, 211, 238, .35);
+  --mk-cyan-soft: rgba(34, 211, 238, .08);
+  --mk-area: rgba(47, 155, 255, .10);
+  --mk-guide: rgba(255, 255, 255, .06);
+  --mk-cross: rgba(255, 255, 255, .22);
+  --mk-metric: rgba(255, 255, 255, .025);
+  --mk-btn: rgba(255, 255, 255, .03);
+  --mk-hover-line: rgba(255, 255, 255, .18);
+  --mk-tip-bg: rgba(12, 18, 28, .96);
+  --mk-tip-line: rgba(255, 255, 255, .12);
   --shadow: 0 18px 40px rgba(0, 0, 0, .45);
   --grid-line: rgba(255, 255, 255, .022);
 }
@@ -102,6 +124,27 @@
   --kline-ma5: #db2777;
   --kline-ma10: #2563eb;
   --kline-ma30: #d97706;
+  /* 市场成交额看板（亮色主题下用深一档保证可读性，色相与暗色一致） */
+  --mk-grad: #dbeafe;
+  --mk-card: #ffffff;
+  --mk-line: rgba(16, 24, 40, .08);
+  --mk-text: #101828;
+  --mk-muted: #78849a;
+  --mk-accent: #2563eb;
+  --mk-accent-line: rgba(37, 99, 235, .50);
+  --mk-accent-soft: rgba(37, 99, 235, .10);
+  --mk-big: #2563eb;
+  --mk-cyan: #0d9488;
+  --mk-cyan-line: rgba(13, 148, 136, .35);
+  --mk-cyan-soft: rgba(13, 148, 136, .08);
+  --mk-area: rgba(37, 99, 235, .08);
+  --mk-guide: rgba(16, 24, 40, .06);
+  --mk-cross: rgba(16, 24, 40, .25);
+  --mk-metric: rgba(16, 24, 40, .025);
+  --mk-btn: rgba(16, 24, 40, .03);
+  --mk-hover-line: rgba(16, 24, 40, .20);
+  --mk-tip-bg: rgba(255, 255, 255, .97);
+  --mk-tip-line: rgba(16, 24, 40, .12);
   --shadow: 0 10px 28px rgba(16, 24, 40, .08);
   --grid-line: rgba(16, 24, 40, .028);
 }
@@ -168,7 +211,8 @@ a { color: inherit; text-decoration: none; }
 .brand-sub { font-size: 10.5px; color: var(--muted); letter-spacing: 1.4px; text-transform: uppercase; }
 
 .nav-group-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted); padding: 0 10px; margin-bottom: 8px; }
-/* 折叠控件：位于「监控」组标题右侧，折叠后仍要留着（所以隐藏的是 span 而不是整块标题） */
+/* 折叠控件：交易 / 行情 / 监控 / 系统 四个组标题右侧各一个，状态同步；
+   折叠后仍要留着（所以隐藏的是 span 而不是整块标题） */
 .side-toggle {
   display: inline-grid; place-items: center;
   width: 22px; height: 22px; flex: 0 0 22px;
@@ -1043,4 +1087,93 @@ tbody tr:hover .row-actions { opacity: 1; }
   .ai-hero-title { font-size: 21px; }
   .ai-catalog { padding: 4px 16px 18px; }
   .ai-recent { padding: 0 16px 18px; }
+}
+
+/* ============================================================================
+   市场成交额看板（009 · 2026-11-12 用户模板移植）
+   结构：顶栏（标题+数据源徽标+同步）→ hero（万亿大数字+6 指标）→ 自绘 canvas 走势图
+   （滚轮缩放/拖拽平移/悬停明细）→ 页脚口径。类名统一 mk- 前缀，避免与底座组件冲突。
+   ========================================================================== */
+/* 平铺自适应（2026-11-12 用户反馈）：不设宽度上限，随 .content 全宽铺开；
+   纵向 flex:1 拿剩余高度，图表卡撑到窗口底部（与 .card-fill 同一约定） */
+.mk-wrap {
+  width: 100%; flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 18px 22px 14px;
+  background: radial-gradient(120% 100% at 20% -10%, var(--mk-grad) 0%, transparent 60%);
+}
+.mk-card { background: var(--mk-card); border: 1px solid var(--mk-line); border-radius: 14px; }
+.mk-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 4px; flex-wrap: wrap; }
+.mk-title { font-size: 20px; font-weight: 600; letter-spacing: .5px; color: var(--mk-text); }
+.mk-title small { font-size: 12px; font-weight: 400; color: var(--mk-muted); margin-left: 10px; letter-spacing: 0; }
+.mk-badges { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mk-badge {
+  font-size: 12px; color: var(--mk-cyan);
+  border: 1px solid var(--mk-cyan-line); background: var(--mk-cyan-soft);
+  padding: 4px 10px; border-radius: 999px;
+}
+.mk-updated { font-size: 12px; color: var(--mk-muted); font-variant-numeric: tabular-nums; }
+.mk-hero { display: grid; grid-template-columns: 1.05fr 1.35fr; gap: 24px; padding: 20px 26px; }
+.mk-eyebrow { font-size: 13px; color: var(--mk-muted); letter-spacing: .5px; }
+.mk-big { display: flex; align-items: baseline; gap: 10px; margin: 8px 0; }
+.mk-big span {
+  font-size: 58px; font-weight: 700; line-height: 1; letter-spacing: -1px;
+  font-variant-numeric: tabular-nums; color: var(--mk-big);
+}
+.mk-big em { font-style: normal; font-size: 18px; color: var(--mk-muted); }
+.mk-rank { font-size: 13px; color: var(--mk-muted); }
+.mk-rank b { color: var(--mk-accent); font-weight: 600; }
+.mk-hero-right { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-content: center; }
+.mk-metric {
+  background: var(--mk-metric); border: 1px solid var(--mk-line); border-radius: 10px;
+  padding: 9px 13px; display: flex; flex-direction: column; gap: 4px;
+}
+.mk-metric span { font-size: 12px; color: var(--mk-muted); }
+.mk-metric b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--mk-text); }
+/* 较前一交易日：红涨绿跌语义色（这里是涨跌幅指示，语义借用正确） */
+.mk-metric b.up { color: var(--up); }
+.mk-metric b.down { color: var(--down); }
+.mk-chart-card { flex: 1 1 auto; min-height: 388px; display: flex; flex-direction: column; overflow: hidden; }
+.mk-chart-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 13px 18px 6px; font-size: 14px; flex-wrap: wrap; color: var(--mk-text);
+}
+.mk-chart-title { display: flex; align-items: baseline; gap: 10px; }
+.mk-chart-title small { font-size: 12px; color: var(--mk-muted); font-variant-numeric: tabular-nums; }
+.mk-ranges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mk-ranges button {
+  font: inherit; font-size: 12px; color: var(--mk-muted);
+  background: var(--mk-btn); border: 1px solid var(--mk-line); border-radius: 7px;
+  padding: 4px 10px; cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.mk-ranges button:hover { color: var(--mk-text); border-color: var(--mk-hover-line); }
+.mk-ranges button.active { color: var(--mk-accent); border-color: var(--mk-accent-line); background: var(--mk-accent-soft); }
+.mk-chart-wrap { position: relative; flex: 1 1 auto; min-height: 300px; margin: 0 8px 10px; }
+.mk-chart-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.mk-chart-wrap canvas.dragging { cursor: grabbing; }
+.mk-tooltip {
+  position: absolute; pointer-events: none; display: none;
+  min-width: 152px; padding: 9px 11px; border-radius: 9px;
+  border: 1px solid var(--mk-tip-line); background: var(--mk-tip-bg);
+  box-shadow: var(--shadow); font-size: 12px; line-height: 1.7;
+  font-variant-numeric: tabular-nums; z-index: 5; color: var(--mk-text);
+}
+.mk-tooltip .t-date { color: var(--mk-muted); margin-bottom: 3px; }
+.mk-tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; }
+.mk-tooltip .t-row span { color: var(--mk-muted); }
+.mk-tooltip .t-row b { font-weight: 600; color: var(--mk-text); }
+.mk-foot { font-size: 12px; color: var(--mk-muted); text-align: center; padding-bottom: 2px; line-height: 1.9; }
+/* 宽屏（≥1500px）：6 个指标卡单行平铺，hero 区更充分地利用横向空间 */
+@media (min-width: 1500px) {
+  .mk-hero { grid-template-columns: minmax(320px, 1fr) 2.1fr; }
+  .mk-hero-right { grid-template-columns: repeat(6, 1fr); }
+}
+@media (max-width: 900px) {
+  .mk-wrap { padding: 12px; gap: 10px; }
+  .mk-hero { grid-template-columns: 1fr; gap: 14px; padding: 16px; }
+  .mk-big span { font-size: 42px; }
+  .mk-hero-right { grid-template-columns: repeat(2, 1fr); }
+  .mk-metric b { font-size: 16px; }
+  .mk-chart-wrap { min-height: 260px; }
 }

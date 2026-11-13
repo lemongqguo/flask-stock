@@ -320,32 +320,35 @@ function initPwStrength() {
   });
 }
 
-/* ---------------- 侧栏折叠（data-side-toggle） ---------------- */
+/* ---------------- 侧栏折叠（data-side-toggle，四组标题行各一个，状态同步） ---------------- */
 function initSideToggle() {
   const shell = document.querySelector('.shell');
-  const btn = document.querySelector('[data-side-toggle]');
-  if (!shell || !btn) return;
+  const btns = document.querySelectorAll('[data-side-toggle]');
+  if (!shell || !btns.length) return;
 
   const KEY = 'sidebar-collapsed';
 
   function apply(collapsed) {
     shell.classList.toggle('side-collapsed', collapsed);
-    btn.setAttribute('aria-expanded', String(!collapsed));
     const label = collapsed ? '展开侧栏' : '折叠侧栏';
-    btn.title = label;
-    btn.setAttribute('aria-label', label);
-    // 折叠后只剩图标，用 chevron 方向表示"点一下会往哪边走"
-    btn.innerHTML = '<svg width="14" height="14"><use href="#'
-      + (collapsed ? 'i-chevron-right' : 'i-chevron-left') + '"/></svg>';
+    // 四个控件同一状态：aria / title / chevron 方向一起切换
+    btns.forEach(btn => {
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+      // 折叠后只剩图标，用 chevron 方向表示"点一下会往哪边走"
+      btn.innerHTML = '<svg width="14" height="14"><use href="#'
+        + (collapsed ? 'i-chevron-right' : 'i-chevron-left') + '"/></svg>';
+    });
   }
 
   apply(localStorage.getItem(KEY) === '1');
 
-  btn.addEventListener('click', () => {
+  btns.forEach(btn => btn.addEventListener('click', () => {
     const collapsed = !shell.classList.contains('side-collapsed');
     localStorage.setItem(KEY, collapsed ? '1' : '0');
     apply(collapsed);
-  });
+  }));
 }
 
 /* ---------------- 刷新行情（data-refresh-quotes） ---------------- */
