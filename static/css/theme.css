@@ -69,6 +69,10 @@
   --mk-cyan: #22d3ee;
   --mk-cyan-line: rgba(34, 211, 238, .35);
   --mk-cyan-soft: rgba(34, 211, 238, .08);
+  /* 分量线三色（沪 cyan / 深 amber / 北 pink）：与合计蓝主色色相明度分离（2026-11-13） */
+  --mk-sh: #22d3ee;
+  --mk-sz: #fbbf24;
+  --mk-bj: #f472b6;
   --mk-area: rgba(47, 155, 255, .10);
   --mk-guide: rgba(255, 255, 255, .06);
   --mk-cross: rgba(255, 255, 255, .22);
@@ -137,6 +141,10 @@
   --mk-cyan: #0d9488;
   --mk-cyan-line: rgba(13, 148, 136, .35);
   --mk-cyan-soft: rgba(13, 148, 136, .08);
+  /* 分量线三色（亮色深一档保证可读性，色相与暗色一致） */
+  --mk-sh: #0891b2;
+  --mk-sz: #d97706;
+  --mk-bj: #db2777;
   --mk-area: rgba(37, 99, 235, .08);
   --mk-guide: rgba(16, 24, 40, .06);
   --mk-cross: rgba(16, 24, 40, .25);
@@ -1149,9 +1157,29 @@ tbody tr:hover .row-actions { opacity: 1; }
 }
 .mk-ranges button:hover { color: var(--mk-text); border-color: var(--mk-hover-line); }
 .mk-ranges button.active { color: var(--mk-accent); border-color: var(--mk-accent-line); background: var(--mk-accent-soft); }
-.mk-chart-wrap { position: relative; flex: 1 1 auto; min-height: 300px; margin: 0 8px 10px; }
+.mk-chart-wrap { position: relative; flex: 1 1 auto; min-height: 300px; margin: 0 8px 4px; }
 .mk-chart-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .mk-chart-wrap canvas.dragging { cursor: grabbing; }
+/* 轴下图例（2026-11-13 分量线）：色条粗细呼应线宽（合计 3px / 分量 2px），颜色随主题变量 */
+.mk-legend {
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 4px 20px; padding: 0 18px 10px; font-size: 12px; color: var(--mk-muted);
+}
+.mk-legend-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: inherit; color: inherit; background: none; border: 0; padding: 2px 6px; margin: 0;
+  border-radius: 6px; cursor: pointer;
+  transition: opacity .15s, background .12s, color .12s;
+}
+.mk-legend-item:hover { background: var(--mk-btn); color: var(--mk-text); }
+.mk-legend-item:focus-visible { outline: 2px solid var(--mk-accent-line); outline-offset: 2px; }
+.mk-legend-item.is-off { opacity: .45; text-decoration: line-through; }
+.mk-legend-item.is-off .mk-legend-line { background: var(--mk-muted); }
+.mk-legend-line { display: inline-block; width: 20px; height: 2px; border-radius: 2px; }
+.mk-legend-line.is-total { height: 3px; background: var(--mk-accent); }
+.mk-legend-line.is-sh { background: var(--mk-sh); }
+.mk-legend-line.is-sz { background: var(--mk-sz); }
+.mk-legend-line.is-bj { background: var(--mk-bj); }
 .mk-tooltip {
   position: absolute; pointer-events: none; display: none;
   min-width: 152px; padding: 9px 11px; border-radius: 9px;
@@ -1163,6 +1191,12 @@ tbody tr:hover .row-actions { opacity: 1; }
 .mk-tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; }
 .mk-tooltip .t-row span { color: var(--mk-muted); }
 .mk-tooltip .t-row b { font-weight: 600; color: var(--mk-text); }
+/* tooltip 行首同色圆点：与分量线 / 图例同色映射（2026-11-13） */
+.mk-tooltip .t-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+.mk-tooltip .t-dot.is-total { background: var(--mk-accent); }
+.mk-tooltip .t-dot.is-sh { background: var(--mk-sh); }
+.mk-tooltip .t-dot.is-sz { background: var(--mk-sz); }
+.mk-tooltip .t-dot.is-bj { background: var(--mk-bj); }
 .mk-foot { font-size: 12px; color: var(--mk-muted); text-align: center; padding-bottom: 2px; line-height: 1.9; }
 /* 宽屏（≥1500px）：6 个指标卡单行平铺，hero 区更充分地利用横向空间 */
 @media (min-width: 1500px) {

@@ -6,7 +6,8 @@
 {#
   市场成交额（009 · 2026-11-12 看板改版）：按用户指定模板（logs/index.html）移植。
   结构：顶栏（标题 + 数据源徽标 + 同步按钮）→ hero（万亿大数字 + 6 指标卡）→
-  自绘 canvas 走势图（滚轮缩放 / 拖拽平移 / 悬停明细 / 六档交易日区间）→ 页脚口径。
+  自绘 canvas 走势图（合计主线 + 沪深北分量细线 / 滚轮缩放 / 拖拽平移 / 悬停明细 /
+  六档交易日区间 / 轴下图例）→ 页脚口径。
   页面只读库：加载 / 60s 自动刷新 / 区间切换都只打本站 API；只有「同步数据」按钮请求外部数据源。
   缺失值（北证 2022-04-29 前 / 深市开业前）渲染「—」而不是 0。
   图表零外部依赖（自绘 canvas，离线可用）；颜色经 cssVar() 读取，切主题自动重绘（D-16 约定）。
@@ -46,9 +47,9 @@
             <div class="mk-rank">历史排名第 <b id="mkRank">-</b> 位 · 共 <span id="mkDays">-</span> 个交易日</div>
         </div>
         <div class="mk-hero-right">
-            <div class="mk-metric"><span>沪市</span><b id="mkSh">--</b></div>
-            <div class="mk-metric"><span>深市</span><b id="mkSz">--</b></div>
-            <div class="mk-metric"><span>北证</span><b id="mkBj">--</b></div>
+            <div class="mk-metric"><span>沪市 SH000001</span><b id="mkSh">--</b></div>
+            <div class="mk-metric"><span>深市 SZ399001</span><b id="mkSz">--</b></div>
+            <div class="mk-metric"><span>北证 BJ899050</span><b id="mkBj">--</b></div>
             <div class="mk-metric"><span>近 20 日均值</span><b id="mkAvg">--</b></div>
             <div class="mk-metric"><span id="mkPeakLabel">历史峰值</span><b id="mkPeak">--</b></div>
             <div class="mk-metric"><span>较前一交易日</span><b id="mkChg">--</b></div>
@@ -75,10 +76,18 @@
             <div class="mk-tooltip" id="mkTip"></div>
             <div id="mkLoadErr" style="position:absolute;inset:0;display:none;place-items:center;color:var(--mk-muted);font-size:12.5px">成交额数据加载失败，请稍后重试</div>
         </div>
+        {# 轴下图例（2026-11-13 分量线 + 点击隐藏）：button 可点击/键盘切换系列可见性，
+           交互对齐 K 线页 Chart.js 图例；色条粗细呼应线宽，颜色随主题变量 #}
+        <div class="mk-legend" id="mkLegend" aria-label="图例（点击隐藏或显示系列）">
+            <button type="button" class="mk-legend-item" data-series="total" aria-pressed="true" title="点击隐藏/显示沪深北合计"><i class="mk-legend-line is-total"></i>沪深北合计</button>
+            <button type="button" class="mk-legend-item" data-series="sh" aria-pressed="true" title="点击隐藏/显示沪市"><i class="mk-legend-line is-sh"></i>沪市</button>
+            <button type="button" class="mk-legend-item" data-series="sz" aria-pressed="true" title="点击隐藏/显示深市"><i class="mk-legend-line is-sz"></i>深市</button>
+            <button type="button" class="mk-legend-item" data-series="bj" aria-pressed="true" title="点击隐藏/显示北证"><i class="mk-legend-line is-bj"></i>北证</button>
+        </div>
     </section>
 
     <footer class="mk-foot">
-        滚轮缩放 · 按住拖拽平移 · 悬停查看明细 · 每 60 秒自动刷新<br>
+        滚轮缩放 · 按住拖拽平移 · 悬停查看明细 · 点击图例隐藏/显示 · 每 60 秒自动刷新<br>
         口径：沪 = 上证指数 · 深 = 深证成指 · 北 = 北证50（2022-04-29 起），合计不含基金、债券；缺失显示 —；
         盘中同步为累计快照，收盘后同步覆盖为终值 · 仅供研究参考
     </footer>
@@ -137,10 +146,23 @@
     const tip = document.getElementById('mkTip');
     const loadErr = document.getElementById('mkLoadErr');
     const rangeBox = document.getElementById('mkRanges');
+    const legendBox = document.getElementById('mkLegend');
 
     const PAD = { left: 64, right: 18, top: 18, bottom: 30 };
     const MIN_POINTS = 20;
     const DEFAULT_DAYS = 245;
+    const TOTAL_WIDTH = 2;        // 合计主线
+    const COMPONENT_WIDTH = 1.25; // 分量线（比主线细一点，2026-11-13 用户要求）
+    // 分量系列：history 行 [date, sh, sz, bj, total] 的下标与线色变量（C 的键）
+    const COMPONENTS = [
+        { index: 1, color: 'sh' },
+        { index: 2, color: 'sz' },
+        { index: 3, color: 'bj' },
+    ];
+    // 图例点击隐藏（2026-11-13 用户反馈，对齐 K 线 Chart.js 图例交互）：
+    // 内存态，跨刷新/区间/缩放平移/主题切换保留，页面重载重置
+    const hidden = { total: false, sh: false, sz: false, bj: false };
+    const SERIES_INDEX = { sh: 1, sz: 2, bj: 3, total: 4 };
 
     let rows = [];
     let viewStart = 0;
@@ -230,15 +252,24 @@
         const C = {
             guide: cssVar('--mk-guide'), muted: cssVar('--mk-muted'),
             area: cssVar('--mk-area'), line: cssVar('--mk-accent'),
-            cross: cssVar('--mk-cross'), dot: cssVar('--mk-cyan'),
+            cross: cssVar('--mk-cross'),
+            sh: cssVar('--mk-sh'), sz: cssVar('--mk-sz'), bj: cssVar('--mk-bj'),
         };
 
+        // Y 轴按可见系列非空值共同定范围：隐藏系列不参与定标（隐藏合计后可放大分量）
         let minValue = Infinity;
         let maxValue = -Infinity;
         for (let i = 0; i < pts.length; i++) {
-            if (pts[i][4] < minValue) minValue = pts[i][4];
-            if (pts[i][4] > maxValue) maxValue = pts[i][4];
+            for (const key in SERIES_INDEX) {
+                if (hidden[key]) continue;
+                const v = pts[i][SERIES_INDEX[key]];
+                if (v === null || v === undefined) continue;
+                if (v < minValue) minValue = v;
+                if (v > maxValue) maxValue = v;
+            }
         }
+        const allHidden = minValue === Infinity;
+        if (allHidden) { minValue = 0; maxValue = 1; }  // 占位范围仅供坐标函数；全隐藏不画刻度
         const span = Math.max(maxValue - minValue, 1);
         minValue = Math.max(0, minValue - span * 0.12);
         maxValue = maxValue + span * 0.12;
@@ -255,22 +286,39 @@
             return PAD.top + ((maxValue - value) / (maxValue - minValue)) * plotH;
         };
 
+        // 分量线路径：null 断笔（moveTo 重启），绝不跨缺失连线、不伪造 0
+        const seriesPath = function (index) {
+            const path = new Path2D();
+            let pen = false;
+            for (let i = 0; i < pts.length; i++) {
+                const v = pts[i][index];
+                if (v === null || v === undefined) { pen = false; continue; }
+                if (pen) path.lineTo(xAt(i), yAt(v));
+                else path.moveTo(xAt(i), yAt(v));
+                pen = true;
+            }
+            return path;
+        };
+
         // 只画淡横向参考线（模板同款）：不画竖向网格与轴边框，避免「表格框」（D-16）
-        ctx.font = '12px "Segoe UI", "Microsoft YaHei", sans-serif';
-        ctx.textBaseline = 'middle';
-        const ticks = 4;
-        for (let i = 0; i <= ticks; i++) {
-            const value = minValue + ((maxValue - minValue) * i) / ticks;
-            const y = yAt(value);
-            ctx.beginPath();
-            ctx.strokeStyle = C.guide;
-            ctx.lineWidth = 1;
-            ctx.moveTo(PAD.left, y);
-            ctx.lineTo(w - PAD.right, y);
-            ctx.stroke();
-            ctx.fillStyle = C.muted;
-            ctx.textAlign = 'right';
-            ctx.fillText(fmtAxis(value), PAD.left - 10, y);
+        // 全部隐藏时不画参考线与 Y 刻度（避免伪造 0~1 刻度）
+        if (!allHidden) {
+            ctx.font = '12px "Segoe UI", "Microsoft YaHei", sans-serif';
+            ctx.textBaseline = 'middle';
+            const ticks = 4;
+            for (let i = 0; i <= ticks; i++) {
+                const value = minValue + ((maxValue - minValue) * i) / ticks;
+                const y = yAt(value);
+                ctx.beginPath();
+                ctx.strokeStyle = C.guide;
+                ctx.lineWidth = 1;
+                ctx.moveTo(PAD.left, y);
+                ctx.lineTo(w - PAD.right, y);
+                ctx.stroke();
+                ctx.fillStyle = C.muted;
+                ctx.textAlign = 'right';
+                ctx.fillText(fmtAxis(value), PAD.left - 10, y);
+            }
         }
 
         const longRange = pts.length > 400;
@@ -284,28 +332,68 @@
             ctx.fillText(text, xAt(index), h - PAD.bottom + 10);
         }
 
-        const linePath = new Path2D();
-        linePath.moveTo(xAt(0), yAt(pts[0][4]));
-        for (let i = 1; i < pts.length; i++) {
-            linePath.lineTo(xAt(i), yAt(pts[i][4]));
+        // 全部隐藏：保留 x 轴标签 + 居中提示，不画任何系列与刻度
+        if (allHidden) {
+            ctx.fillStyle = C.muted;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = '13px "Segoe UI", "Microsoft YaHei", sans-serif';
+            ctx.fillText('所有系列已隐藏 · 点击下方图例恢复', PAD.left + plotW / 2, PAD.top + plotH / 2);
+            return;
         }
 
-        // 面积填充 + 主线
-        ctx.beginPath();
-        ctx.moveTo(xAt(0), h - PAD.bottom);
-        for (let i = 0; i < pts.length; i++) {
-            ctx.lineTo(xAt(i), yAt(pts[i][4]));
+        // 面积填充只跟随合计（合计隐藏时一并消失），先于分量线绘制避免半透明填充盖分量
+        if (!hidden.total) {
+            ctx.beginPath();
+            ctx.moveTo(xAt(0), h - PAD.bottom);
+            for (let i = 0; i < pts.length; i++) {
+                ctx.lineTo(xAt(i), yAt(pts[i][4]));
+            }
+            ctx.lineTo(xAt(pts.length - 1), h - PAD.bottom);
+            ctx.closePath();
+            ctx.fillStyle = C.area;
+            ctx.fill();
         }
-        ctx.lineTo(xAt(pts.length - 1), h - PAD.bottom);
-        ctx.closePath();
-        ctx.fillStyle = C.area;
-        ctx.fill();
 
-        ctx.strokeStyle = C.line;
-        ctx.lineWidth = 2;
+        // 分量线先画（细线垫底），合计主线后画压在最上层；隐藏系列跳过
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
-        ctx.stroke(linePath);
+        ctx.lineWidth = COMPONENT_WIDTH;
+        for (let s = 0; s < COMPONENTS.length; s++) {
+            if (hidden[COMPONENTS[s].color]) continue;
+            ctx.strokeStyle = C[COMPONENTS[s].color];
+            ctx.stroke(seriesPath(COMPONENTS[s].index));
+        }
+
+        if (!hidden.total) {
+            const linePath = new Path2D();
+            linePath.moveTo(xAt(0), yAt(pts[0][4]));
+            for (let i = 1; i < pts.length; i++) {
+                linePath.lineTo(xAt(i), yAt(pts[i][4]));
+            }
+            ctx.strokeStyle = C.line;
+            ctx.lineWidth = TOTAL_WIDTH;
+            ctx.stroke(linePath);
+        }
+
+        // 单点窗口：描边不可见，各可见系列改画点
+        if (pts.length === 1) {
+            for (let s = 0; s < COMPONENTS.length; s++) {
+                if (hidden[COMPONENTS[s].color]) continue;
+                const v = pts[0][COMPONENTS[s].index];
+                if (v === null || v === undefined) continue;
+                ctx.beginPath();
+                ctx.arc(xAt(0), yAt(v), 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = C[COMPONENTS[s].color];
+                ctx.fill();
+            }
+            if (!hidden.total) {
+                ctx.beginPath();
+                ctx.arc(xAt(0), yAt(pts[0][4]), 4, 0, Math.PI * 2);
+                ctx.fillStyle = C.line;
+                ctx.fill();
+            }
+        }
 
         if (hoverIndex >= 0 && hoverIndex < pts.length) {
             const x = xAt(hoverIndex);
@@ -316,10 +404,22 @@
             ctx.moveTo(x, PAD.top);
             ctx.lineTo(x, h - PAD.bottom);
             ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(x, y, 4, 0, Math.PI * 2);
-            ctx.fillStyle = C.dot;
-            ctx.fill();
+            // 各可见系列悬停点用各自线色（null 跳过），合计点最后画在最上层
+            for (let s = 0; s < COMPONENTS.length; s++) {
+                if (hidden[COMPONENTS[s].color]) continue;
+                const v = pts[hoverIndex][COMPONENTS[s].index];
+                if (v === null || v === undefined) continue;
+                ctx.beginPath();
+                ctx.arc(x, yAt(v), 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = C[COMPONENTS[s].color];
+                ctx.fill();
+            }
+            if (!hidden.total) {
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = C.line;
+                ctx.fill();
+            }
         }
     }
 
@@ -331,11 +431,14 @@
         const plotW = plotWidth();
         const x = PAD.left + (pts.length === 1 ? plotW / 2 : (index / (pts.length - 1)) * plotW);
 
-        tip.innerHTML = '<div class="t-date">' + item[0] + '</div>'
-            + '<div class="t-row"><span>沪深北合计</span><b>' + fmtAmount(item[4]) + '</b></div>'
-            + '<div class="t-row"><span>沪市</span><b>' + fmtAmount(item[1]) + '</b></div>'
-            + '<div class="t-row"><span>深市</span><b>' + fmtAmount(item[2]) + '</b></div>'
-            + '<div class="t-row"><span>北证</span><b>' + fmtAmount(item[3]) + '</b></div>';
+        // 仅组装可见系列行（隐藏系列不残留）；全部隐藏不弹 tooltip
+        const tipRows = [];
+        if (!hidden.total) tipRows.push('<div class="t-row"><span><i class="t-dot is-total"></i>沪深北合计</span><b>' + fmtAmount(item[4]) + '</b></div>');
+        if (!hidden.sh) tipRows.push('<div class="t-row"><span><i class="t-dot is-sh"></i>沪市</span><b>' + fmtAmount(item[1]) + '</b></div>');
+        if (!hidden.sz) tipRows.push('<div class="t-row"><span><i class="t-dot is-sz"></i>深市</span><b>' + fmtAmount(item[2]) + '</b></div>');
+        if (!hidden.bj) tipRows.push('<div class="t-row"><span><i class="t-dot is-bj"></i>北证</span><b>' + fmtAmount(item[3]) + '</b></div>');
+        if (tipRows.length === 0) { tip.style.display = 'none'; return; }
+        tip.innerHTML = '<div class="t-date">' + item[0] + '</div>' + tipRows.join('');
         tip.style.display = 'block';
 
         const tipWidth = tip.offsetWidth;
@@ -417,6 +520,19 @@
         const days = Number(button.dataset.days);
         setDays(days);
         markActiveButton(days);
+    });
+
+    // 图例点击隐藏/显示（button 原生 Enter/Space 等效）；切换后立即重绘并刷新悬停浮层
+    legendBox.addEventListener('click', function (event) {
+        const button = event.target.closest('button[data-series]');
+        if (!button) return;
+        const key = button.dataset.series;
+        hidden[key] = !hidden[key];
+        button.classList.toggle('is-off', hidden[key]);
+        button.setAttribute('aria-pressed', String(!hidden[key]));
+        if (hoverIndex >= 0) showTooltip(hoverIndex);
+        else tip.style.display = 'none';
+        draw();
     });
 
     canvas.addEventListener('wheel', function (event) {

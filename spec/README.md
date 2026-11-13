@@ -3,7 +3,7 @@
 > 本文件是本项目**唯一的规格入口**。新人或 Agent 从这里开始，不需要翻历史聊天记录。
 > 维护方法见 [Spec.md](./Spec.md)；执行细则见 [rules/README.md](./rules/README.md)。
 
-**最后更新**：2026-11-13　|　**当前基线**：`v1.5.0`　|　**维护状态**：M1~M4 缺陷已闭环；**9 份规格全部已实现**（007 已真实网关验证；006 / 007 页面待人工看观感；009 已真实库 + 真实数据源验证，CSV 导入待用户指令），**2026-11-12 新增 009 市场成交额（同日按用户模板看板改版）；2026-11-13 成交额增量同步 + 监控自动同步（默认 3h）**，见 [PROGRESS.md](./PROGRESS.md)
+**最后更新**：2026-11-13　|　**当前基线**：`v1.5.0`　|　**维护状态**：M1~M4 缺陷已闭环；**9 份规格全部已实现**（007 已真实网关验证；006 / 007 页面待人工看观感；009 已真实库 + 真实数据源验证，CSV 导入待用户指令），**2026-11-12 新增 009 市场成交额（同日按用户模板看板改版）；2026-11-13 成交额增量同步 + 监控自动同步（默认 3h）+ 走势图分量线与轴下图例 + 图例点击隐藏**，见 [PROGRESS.md](./PROGRESS.md)
 
 ---
 
@@ -92,6 +92,8 @@ spec/
 | [2026-11-12 市场成交额看板改版](./changes/2026-11-12-market-turnover-dashboard.md) | 行为变更 | [009](./current/009-market-turnover.md)、[008](./current/008-frontend-ui.md) | 1（**已合入**：按用户模板移植 hero + 自绘 canvas + 六档区间 + 缩放/平移/悬停 + 60s 自动刷新，真实浏览器 9 项验证；待人工确认观感后与首变更一起归档） |
 | [2026-11-12 壳层布局反馈](./changes/2026-11-12-shell-toggles-fullbleed-market.md) | 行为变更 | [008](./current/008-frontend-ui.md)、[009](./current/009-market-turnover.md) | 1（**已合入**：四组折叠控件同步 + 看板全宽平铺 / 图表撑满；三宽度实测全过；待人工确认观感后归档） |
 | [2026-11-13 成交额增量同步 + 自动同步](./changes/2026-11-13-turnover-incremental-auto-sync.md) | 行为变更 + 新增能力 | [009](./current/009-market-turnover.md)、[004](./current/004-monitor-service.md) | 1（**已合入**：库非空增量 / 库空全量 / `--full` 校准 + 监控 3h 自动同步；61/61 用例通过；待真实环境观察 3h 周期后归档） |
+| [2026-11-13 成交额走势图分量线 + 轴下图例](./changes/2026-11-13-turnover-chart-component-lines.md) | 行为变更 | [009](./current/009-market-turnover.md) | 1（**已合入**：沪/深/北三条分量细线 + x 轴下四项图例；67/67 用例通过 + 浏览器 7 项实测；待人工确认观感后归档） |
+| [2026-11-13 成交额图例点击隐藏](./changes/2026-11-13-turnover-legend-toggle.md) | 行为变更 | [009](./current/009-market-turnover.md) | 1（**已合入**：图例 button 点击隐藏/显示 + 可见系列定标 + 全隐藏兜底；71/71 用例 + Node 运行时 7 项；待人工确认观感后归档） |
 
 > 已合入：[告警表补齐类型字段](./changes/2026-10-21-alarm-type-fields.md)（003 新增 3.5 节）、
 > [前端 UI 改版](./changes/2026-10-21-frontend-redesign.md)（008，UI 底座先行，新功能页面直接按新样式落）、
@@ -144,7 +146,7 @@ spec/
 5. **AI 只实测过一家网关**：`api.agicto.cn`（`responses` / `chat` 双风格均通），换厂商需各自确认返回结构；
    另**推理型模型建议把 `AI_TIMEOUT` 调到 120~180**（默认 60 在长思考时会超时，代码会正确降级为「超时失败、不落库」）。
 6. **监控无运行时控制面**：无法在页面上启停监控或查看健康度（`get_status()` 已有数据，未接 UI）。
-7. **无 CI**：695 个用例只能本地运行（`./stockvenv/bin/python tests/run_all.py`，Windows 为 `stockvenv\Scripts\python.exe`）。**必须走项目自带的 `stockvenv/`**（Python 3.12 + numpy 2.5.4 + pandas 3.1.0，与 `requirements.txt` 对齐）；全局解释器的 numpy/pandas 版本不兼容会让 import pandas 的模块直接崩。
+7. **无 CI**：705 个用例只能本地运行（`./stockvenv/bin/python tests/run_all.py`，Windows 为 `stockvenv\Scripts\python.exe`）。**必须走项目自带的 `stockvenv/`**（Python 3.12 + numpy 2.5.4 + pandas 3.1.0，与 `requirements.txt` 对齐）；全局解释器的 numpy/pandas 版本不兼容会让 import pandas 的模块直接崩。
 8. **无 CSRF 防护**：Flask-WTF 已引入但未启用，所有 POST 表单裸奔。
 9. **负 PE 会命中 PE 档位**：亏损公司必然触发 PE 告警，当前行为已被测试锁定，是否过滤待产品决策。
 10. **指标告警要求四项同时成立**（2026-10-23，[ADR-004](./decisions/004-indicator-combo-semantics.md)）：

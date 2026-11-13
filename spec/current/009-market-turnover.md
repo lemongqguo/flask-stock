@@ -2,7 +2,7 @@
 
 **状态**：已实现（真实库 + 真实数据源验证通过；CSV 历史导入待用户指令执行）　|　**最后更新**：2026-11-13
 
-**相关变更**：[2026-11-12 市场成交额](../changes/2026-11-12-market-turnover.md)、[2026-11-12 看板改版](../changes/2026-11-12-market-turnover-dashboard.md)、[2026-11-13 增量同步 + 自动同步](../changes/2026-11-13-turnover-incremental-auto-sync.md)
+**相关变更**：[2026-11-12 市场成交额](../changes/2026-11-12-market-turnover.md)、[2026-11-12 看板改版](../changes/2026-11-12-market-turnover-dashboard.md)、[2026-11-13 增量同步 + 自动同步](../changes/2026-11-13-turnover-incremental-auto-sync.md)、[2026-11-13 分量线与轴下图例](../changes/2026-11-13-turnover-chart-component-lines.md)、[2026-11-13 图例点击隐藏](../changes/2026-11-13-turnover-legend-toggle.md)
 **决策记录**：[ADR-006 数据源、统计口径与存储形态](../decisions/006-turnover-source-and-caliber.md)、[ADR-007 自绘 canvas](../decisions/007-turnover-dashboard-self-drawn-canvas.md)、[ADR-008 增量窗口与监控线程自动同步](../decisions/008-turnover-incremental-and-auto-sync.md)
 
 ---
@@ -81,9 +81,18 @@
 - **hero**：最新交易日合计以**万亿大数字**展示（两位小数）+ 历史排名 / 共 N 个交易日；
   右侧 **6 指标卡**：沪市 / 深市 / 北证 / 近 20 日均值 / 历史峰值（带日期）/ 较前一交易日（百分比）；
 - **走势图**：**自绘 canvas，零外部依赖**（[ADR-007](../decisions/007-turnover-dashboard-self-drawn-canvas.md)）；
+  **合计主线（2px）+ 沪/深/北三条分量细线（1.25px，2026-11-13 起）**，分量色 `--mk-sh`/`--mk-sz`/`--mk-bj`
+  （暗青/琥珀/粉，亮色深一档），先画分量后画主线（主线最上层），面积填充仍只跟随合计；
+  **共享 Y 轴**按可见系列非空值共同定范围（±12% padding），分量 null **断线不连、不画点**
+  （北证 2022-04-29 前 / 深市开业前），单点窗口各系列改画点；**图例在 x 轴下方**
+  （canvas 下 HTML 四项 button：沪深北合计/沪市/深市/北证，色条粗细呼应线宽，颜色随主题变量；
+  **点击隐藏/显示系列**（2026-11-13，对齐 K 线 Chart.js 图例交互）：键盘 Enter/Space 等效、`aria-pressed` 反映状态，
+  隐藏态 `is-off` 变淡+删除线+色条灰化；Y 轴按可见系列定标，全部隐藏显示居中恢复提示；
+  悬停/tooltip 仅可见系列；隐藏状态跨刷新/区间/缩放/主题保留，页面重载重置）；
   **六档交易日区间** 1月 / 3月 / 6月 / 1年 / 3年 / 全部（22/66/130/245/735/0，默认 1年，
   以**库内最新日期**为锚点往前推，数据旧时区间仍有效）；**滚轮缩放**（最少 20 点、光标位置锚定）/
-  **拖拽平移** / **悬停明细**（十字线 + 合计与三市四值 tooltip）；只画淡横向参考线，
+  **拖拽平移** / **悬停明细**（十字线 + 各系列同色圆点（分量 r2.5 / 合计 r4，null 跳过）+
+  合计与三市四值 tooltip，行首同色圆点）；只画淡横向参考线，
   **不画竖向网格与轴边框**（D-16）；颜色走 `--mk-*` CSS 变量（双主题），不借用 `--up/--down` 语义色
   （仅「较前一日」百分比用涨跌色）；**主题切换自动重绘**（MutationObserver 监听 `data-theme`，
   D-16 约定延续，不同于 008 K 线图的「切主题需刷新」约定）；
@@ -115,6 +124,9 @@
 6. `python -m unittest tests.test_shell_layout -v` 全部通过（4 用例：侧栏四组折叠控件 / 多按钮同步 / 全宽平铺 / 图表撑满）。
 7. `python -m unittest tests.test_turnover_auto_sync -v` 全部通过（10 用例：开关 / 到点 / 空库守护 / 失败也计间隔 / 间隔下限 / 非法间隔回落默认 / 退避前调用契约）。
 8. 监控线程每 `TURNOVER_AUTO_SYNC_INTERVAL` 秒自动增量同步一次；空库跳过并日志提示；失败不中断主循环。
+9. `python -m unittest tests.test_market_turnover_chart -v` 全部通过（10 用例：图例在 x 轴下 / 四项齐全 /
+   分量线细于主线 / null 断笔 / Y 轴含可见分量 / 双主题色变量 / 图例 button 可点击 / 点击切换 handler /
+   隐藏系列过滤与全隐藏兜底 / is-off 样式）。
 
 ## 8. 已知限制
 
